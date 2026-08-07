@@ -10,6 +10,7 @@ acessados via /mnt/... (ver .env).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -87,7 +88,7 @@ def run_claude_cli(prompt: str) -> tuple[bool, str]:
                 "--permission-mode",
                 "acceptEdits",
                 "--output-format",
-                "text",
+                "json",
             ],
             cwd=str(OBSIDIAN_VAULT_DIR),
             env=env,
@@ -107,7 +108,27 @@ def run_claude_cli(prompt: str) -> tuple[bool, str]:
         stderr_tail = (result.stderr or "").strip()[-500:]
         return False, f"Claude CLI retornou erro (code {result.returncode}): {stderr_tail}"
 
-    return True, result.stdout.strip()
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        logger.warning("Saída do Claude CLI não era JSON válido, usando texto bruto.")
+        return True, result.stdout.strip()
+
+    cost_usd = payload.get("total_cost_usd")
+    usage = payload.get("usage") or {}
+    if cost_usd is not None:
+        logger.info(
+            "Custo Claude: $%.4f (tokens entrada=%s cache_leitura=%s saída=%s)",
+            cost_usd,
+            usage.get("input_tokens"),
+            usage.get("cache_read_input_tokens"),
+            usage.get("output_tokens"),
+        )
+
+    if payload.get("is_error"):
+        return False, f"Claude CLI retornou erro: {payload.get('result', '(sem detalhe)')}"
+
+    return True, (payload.get("result") or "").strip()
 
 
 def extract_resumo(claude_stdout: str) -> str:

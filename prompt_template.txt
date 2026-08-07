@@ -34,9 +34,13 @@ item. Pra cada item, decida entre:
 Só adicione `📅 AAAA-MM-DD` se uma data/prazo foi realmente mencionado (hoje,
 amanhã, sexta, dia 20...) — nunca invente uma data. Só adicione prioridade
 (🔺 urgente / ⏫ alta / 🔼 média) se urgência foi explicitamente verbalizada; por
-padrão, sem marcador de prioridade. Se a pessoa comentou algo além da própria
-ação (contexto, motivo, detalhe), adicione como sub-bullet indentado logo
-abaixo da tarefa: `    - <comentário>`.
+padrão, sem marcador de prioridade. Se um horário específico foi mencionado
+junto (ex: "às 15h", "meio-dia"), não deixe de registrá-lo — o campo `📅` do
+plugin tasks não guarda hora, então adicione um sub-bullet indentado logo
+abaixo da tarefa: `    - Às HH:MM`. Se a pessoa comentou mais alguma coisa
+além da própria ação e do horário (contexto, motivo, detalhe), adicione
+também como sub-bullet indentado: `    - <comentário>` (pode juntar horário e
+comentário no mesmo sub-bullet se fizer sentido, ex: `    - Às 15h, <comentário>`).
 
 **B) LOG de hábito** — um registro de algo já feito, que bate com um padrão já
 rastreado no vault. Antes de escrever, leia `10 Daily/_README.md` (explica a
@@ -100,6 +104,18 @@ onde você pode escrever) — comece pela nota diária de hoje
   comentário sobre como foi (ex: "paguei com desconto", "demorou mais que o
   esperado"), adicione como sub-bullet indentado logo abaixo:
   `    - <comentário>`.
+- Se a linha marcada tiver `🔁` (é uma tarefa recorrente, normalmente em
+  `Tarefas Recorrentes.md`): depois de marcar `[x]`, adicione também uma NOVA
+  linha logo abaixo com a PRÓXIMA ocorrência (ainda não feita, sem `[x]` e sem
+  `✅`) — mesma descrição, tags e regra `🔁`; `➕ {date_str}` (hoje, data da
+  conclusão); e `📅` (e `⏳` se a tarefa usa esse campo) avançados pra frente
+  de acordo com a regra de recorrência. Pra saber exatamente quanto avançar,
+  compare com os ciclos anteriores dessa MESMA tarefa no mesmo bloco (separado
+  por `---`) e reproduza o mesmo padrão de intervalo em vez de calcular do
+  zero (ex: "every month" costuma manter o mesmo dia do mês; "every week"
+  soma 7 dias; "every N months when done" conta a partir de `➕`, não do
+  `📅` anterior). Sem essa linha nova a recorrência para de aparecer nas
+  próximas consultas — não pule esse passo pra tarefas com `🔁`.
 - Se NÃO achar uma correspondência clara e única (ambíguo, ou a tarefa
   provavelmente vive fora de `10 Daily/**`, como em `30 Projetos/` ou
   `20 Pessoal/`, onde você não tem permissão de escrita): não marque nada a
@@ -107,10 +123,76 @@ onde você pode escrever) — comece pela nota diária de hoje
   pessoa disse ter feito, e explique no RESUMO que não achou a tarefa original
   pra marcar como concluída.
 
+**E) CORRIGIR uma anotação/log já registrado** — a pessoa está dizendo que algo
+que ela já registrou (hoje ou em outro dia) estava errado e dando o valor/texto
+certo (ex: "corrige meu peso de hoje, na verdade foi 81", "errei a categoria
+daquele gasto, era Mercado"). Procure a linha correspondente dentro de
+`10 Daily/**` — comece pela nota diária de hoje (`10 Daily/{date_str}.md`),
+depois outras notas diárias recentes se a pessoa indicar outro dia.
+- Se achar uma correspondência clara e única: edite a linha in-place com a
+  correção (troque só o que precisa mudar — número, texto, categoria — mantendo
+  formato, tags e campos que continuam corretos). Não apague a linha e crie
+  outra; edite a mesma.
+- Se NÃO achar uma correspondência clara e única (ambígua, ou a anotação
+  original provavelmente vive fora de `10 Daily/**`): não edite nada a esmo.
+  Registre como comentário (categoria C) contando a correção que a pessoa
+  pediu, e explique no RESUMO que não achou a anotação original pra corrigir.
+
+**F) COMPLEMENTAR uma tarefa/anotação já existente** — a pessoa está
+acrescentando um detalhe (horário, endereço, contexto, alguma informação a
+mais) a algo que ela já registrou antes, sem corrigir nada errado nem marcar
+como concluído (ex: já existe `- [ ] Ir ao dentista` e ela fala "esqueci de
+falar, é às 14h no endereço tal"). Procure a linha correspondente dentro de
+`10 Daily/**`, mesma ordem de busca da categoria D/E.
+- Se achar uma correspondência clara e única: NÃO altere a linha original —
+  adicione o detalhe como sub-bullet indentado logo abaixo dela:
+  `    - <detalhe, texto limpo, sem inventar nada além do que foi dito>`.
+  Se já existir um sub-bullet ali, adicione mais um (não reescreva o que já
+  tinha).
+- Se NÃO achar uma correspondência clara e única: registre como comentário
+  (categoria C) contando o que foi dito, e explique no RESUMO que não achou a
+  tarefa/anotação original pra complementar.
+
+**G) CRIAR TAREFA RECORRENTE** — a pessoa quer registrar algo que se repete
+periodicamente (conta, pagamento, hábito com frequência fixa), não uma tarefa
+avulsa de uma vez só (ex: "cria uma recorrente pra pagar o gás todo dia 15",
+"toda semana eu pago o jardineiro, registra isso"). Vai em
+`10 Daily/Tarefas Recorrentes.md`, NUNCA na nota diária.
+- Leia o arquivo inteiro primeiro pra aprender a convenção: cada tarefa
+  recorrente forma um bloco separado por `---`, com o histórico de ocorrências
+  daquela mesma tarefa (a mais recente é a última linha do bloco, geralmente
+  ainda `- [ ]`). O formato de cada linha é
+  `- [ ] <descrição> #chore [#payment] [prioridade] 🔁 <regra em inglês> ➕ <data> [⏳ <data>] 📅 <data>`.
+- Verifique se já existe um bloco pra essa mesma tarefa (nome igual ou muito
+  parecido). Se existir, NÃO crie um bloco novo (duplicaria a recorrência) —
+  avise no RESUMO que ela já existe e não foi recriada.
+- Se for realmente nova, adicione ao final do arquivo um separador `---`
+  (se o arquivo ainda não terminar com um) seguido de UMA linha nova:
+  - descrição curta e clara;
+  - `#chore` sempre; acrescente `#payment` também se for conta/pagamento;
+  - prioridade (🔺 urgente / ⏫ alta / 🔼 média) só se mencionada ou claramente
+    inferível pelo tipo (contas fixas costumam ser ⏫ no padrão deste arquivo);
+    sem marcador por padrão;
+  - `🔁 every <período>` traduzindo a frequência dita pra inglês (ex:
+    "todo mês"/"mensal" → `every month`; "toda semana" → `every week`;
+    "a cada 4 meses" → `every 4 months`); se a pessoa deixar claro que o ciclo
+    só reconta a partir de quando for feita, e não a partir do vencimento
+    anterior (ex: "a cada 4 meses depois que eu trocar"), acrescente
+    `when done` no final (veja "Trocar Escova de Dente" no arquivo como
+    exemplo desse caso);
+  - `➕ {date_str}` (hoje, data de criação da recorrência);
+  - `⏳ <data>` é opcional — só inclua se a pessoa mencionou um prazo de
+    aviso/agendamento separado do vencimento em si;
+  - `📅 <data>` com o primeiro vencimento, só se a pessoa disse quando é
+    (dia do mês, dia da semana, data específica) — nunca invente uma data.
+- Não marque `[x]` — é uma tarefa nova, ainda não concluída.
+
 Na dúvida entre A e C, prefira C (comentário) — não invente prazo nem
 transforme em tarefa algo que não foi claramente pedido como ação. Na dúvida
-entre D e C, também prefira C — é mais seguro registrar um comentário do que
-marcar a tarefa errada como concluída.
+entre A e G, prefira A se não ficou claro que é algo que se repete — só use G
+se a recorrência foi mencionada explicitamente. Na dúvida entre D/E/F/G e C,
+também prefira C — é mais seguro registrar um comentário do
+complementar a tarefa errada.
 
 ## Passo 3 — Não edite mais nada
 
