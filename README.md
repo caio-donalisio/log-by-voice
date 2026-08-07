@@ -13,6 +13,7 @@ acessados via `/mnt/d/...`.
 
 - `python3` 3.12 ✓
 - `git` ✓
+- `uv` (gerenciador de pacotes/venv) ✓ — instalado em `~/.local/bin/uv`.
 - `claude` (Claude Code CLI) — já instalado e autenticado neste WSL,
   independente da instalação do Windows. Confira com `claude --version`.
 - Não precisa instalar ffmpeg — o faster-whisper decodifica o `.ogg` sozinho.
@@ -21,10 +22,12 @@ acessados via `/mnt/d/...`.
 
 ```bash
 cd ~/telegram_audio_bot
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 ```
+
+Isso cria o `.venv` sozinho e instala tudo que está no `pyproject.toml`
+(travado em `uv.lock`, já commitado, pra reprodutibilidade). Não precisa
+ativar o venv manualmente — o passo 4 usa `uv run`, que já resolve isso.
 
 A primeira transcrição baixa o modelo `medium` do faster-whisper (alguns GB)
 — só acontece uma vez, fica em cache em `~/.cache/huggingface`.
@@ -46,8 +49,7 @@ Preencha:
 ## 4. Testar manualmente
 
 ```bash
-source .venv/bin/activate
-python bot.py
+uv run bot.py
 ```
 
 Confira no terminal (e em `bot.log`) que o modelo Whisper carregou e o bot
@@ -73,7 +75,7 @@ O WSL2 não usa o Agendador de Tarefas do Windows diretamente. Duas opções:
 2. Gatilho: **Ao fazer logon**.
 3. Ação: **Iniciar um programa**.
    - Programa: `wsl.exe`
-   - Argumentos: `-d Ubuntu -- bash -lc "cd ~/telegram_audio_bot && source .venv/bin/activate && python bot.py"`
+   - Argumentos: `-d Ubuntu -- bash -lc "cd ~/telegram_audio_bot && uv run bot.py"`
 4. Isso sobe a VM do WSL sozinho se ela não estiver rodando.
 
 **B) systemd dentro do WSL (mais robusto, reinicia sozinho se cair)**
@@ -92,7 +94,7 @@ O WSL2 não usa o Agendador de Tarefas do Windows diretamente. Duas opções:
    Type=simple
    User=caiod
    WorkingDirectory=/home/caiod/telegram_audio_bot
-   ExecStart=/home/caiod/telegram_audio_bot/.venv/bin/python bot.py
+   ExecStart=/home/caiod/.local/bin/uv run bot.py
    Restart=on-failure
    RestartSec=5
 
