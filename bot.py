@@ -32,6 +32,14 @@ AUDIO_LOGS_DIR = Path(os.environ["AUDIO_LOGS_DIR"])
 OBSIDIAN_VAULT_DIR = Path(os.environ["OBSIDIAN_VAULT_DIR"])
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "medium")
 WHISPER_LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "pt")
+# "auto" tenta CUDA se detectar GPU, mas no WSL isso costuma achar o driver
+# sem as libs cuBLAS/cuDNN instaladas e quebrar na hora de transcrever.
+# CPU é o default seguro; troque via WHISPER_DEVICE=cuda se instalar o
+# toolkit CUDA completo no WSL.
+WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
+WHISPER_COMPUTE_TYPE = os.environ.get(
+    "WHISPER_COMPUTE_TYPE", "int8" if WHISPER_DEVICE == "cpu" else "auto"
+)
 LOCAL_TIMEZONE = ZoneInfo(os.environ.get("LOCAL_TIMEZONE", "America/Sao_Paulo"))
 CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH", "claude")
 CLAUDE_CONFIG_DIR = os.environ.get("CLAUDE_CONFIG_DIR")  # opcional, equivalente a um alias tipo `claude-caio`
@@ -50,7 +58,9 @@ for _h in (_console_handler, _file_handler):
     _h.setFormatter(_formatter)
     logger.addHandler(_h)
 
-whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device="auto", compute_type="auto")
+whisper_model = WhisperModel(
+    WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE
+)
 claude_lock = asyncio.Lock()
 
 CLAUDE_PROMPT_TEMPLATE = """\
@@ -61,8 +71,9 @@ Nota de destino: `10 Daily/{date_str}.md` (data local em que o áudio foi gravad
 Passos:
 1. Se o arquivo `10 Daily/{date_str}.md` NÃO existir, crie-o seguindo exatamente a
    mesma estrutura das notas diárias existentes nessa pasta (use `10 Daily/2025-10-13.md`
-   como referência de formato): frontmatter com `date_created` (formato
-   `{date_str}THH:mm` usando a hora atual), `tags: ["daily-task"]`, `aliases` com a
+   como referência de formato): frontmatter com `date_created: {date_str}T{time_str}`
+   (o horário em que o ÁUDIO foi gravado, não o horário atual de processamento),
+   `tags: ["daily-task"]`, `aliases` com a
    data por extenso em português, no formato `DD/MM/YYYY` e por extenso com o ano;
    heading `# Nota Diária: <dia da semana por extenso>, <data por extenso em português>`;
    seção `### ✅ Tarefas Registradas` com um item vazio `- [ ]`; seção
