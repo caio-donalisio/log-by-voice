@@ -1,0 +1,127 @@
+Você vai registrar a transcrição de um áudio pessoal no vault Obsidian,
+classificando o conteúdo e formatando cada item do jeito que o resto do vault
+já usa (não apenas um bullet solto).
+
+Nota de destino: `10 Daily/{date_str}.md` (data local em que o áudio foi gravado).
+
+## Passo 1 — Se a nota do dia não existir
+
+Crie `10 Daily/{date_str}.md` seguindo exatamente a estrutura de
+`_templates/generic_daily_note.md` (leia esse arquivo pra replicar a estrutura e
+a lógica de datas das queries `tasks`, substituindo pelas datas corretas em
+relação a {date_str}):
+- frontmatter com `date_created: {date_str}T{time_str}` (horário do ÁUDIO, não
+  do processamento), `tags: ["daily-task"]`, `aliases` com a data por extenso em
+  português (dia, DD/MM/YYYY, dia+mês+ano por extenso);
+- heading `# Nota Diária: <dia da semana por extenso>, <data por extenso em
+  português>`;
+- seção `### ✅ Tarefas Registradas` com um item vazio `- [ ]`;
+- seção `### 📓 Anotações`;
+- os blocos `tasks` de Atrasadas / Para Hoje / Próximos 7 Dias.
+
+Se a nota já existir, NÃO mexa no frontmatter nem em nenhuma seção além das
+duas de conteúdo do Passo 2.
+
+## Passo 2 — Classifique o conteúdo da transcrição
+
+A transcrição pode conter mais de uma coisa distinta (ex: um lembrete E um
+registro de treino na mesma fala) — trate cada uma separadamente, uma linha por
+item. Pra cada item, decida entre:
+
+**A) TAREFA NOVA** — algo a fazer, ainda não feito. Vai em
+`### ✅ Tarefas Registradas`, como linha nova:
+`- [ ] <descrição curta e clara>`
+Só adicione `📅 AAAA-MM-DD` se uma data/prazo foi realmente mencionado (hoje,
+amanhã, sexta, dia 20...) — nunca invente uma data. Só adicione prioridade
+(🔺 urgente / ⏫ alta / 🔼 média) se urgência foi explicitamente verbalizada; por
+padrão, sem marcador de prioridade. Se a pessoa comentou algo além da própria
+ação (contexto, motivo, detalhe), adicione como sub-bullet indentado logo
+abaixo da tarefa: `    - <comentário>`.
+
+**B) LOG de hábito** — um registro de algo já feito, que bate com um padrão já
+rastreado no vault. Antes de escrever, leia `10 Daily/_README.md` (explica a
+convenção geral de campos/tags) e, se aplicável, a pasta relevante abaixo pra
+pegar o nome EXATO de peça/exercício (acentuação importa — é o que faz o link
+funcionar):
+
+| Do que a pessoa falou | Onde ler pra achar o nome exato | Formato exato (vai em `### 📓 Anotações`) |
+|---|---|---|
+| Se pesou / peso corporal | — | `- Me pesei [weight:: <número>] #log/fitness #fitness/weight` |
+| Praticou/estudou piano (peça, exercício ou teoria) | `70 Piano/Repertório/**`, `70 Piano/Exercícios/**` | `- <Pratiquei\|Estudei> [[<Nome exato>]] [minutes:: <N>] #log/piano #piano/<repertoire\|exercise\|theory>` |
+| Fez uma série de musculação | `100 Fitness/Plano de Treino.md`, `100 Fitness/Exercícios/**` | `- [[<Nome exato do exercício>]] [weight:: <kg>] [reps:: <N>] [sets:: <N>] #log/fitness #fitness/lifting` |
+| Fez cardio (bicicleta, esteira etc.) | — | `- [x] Fazer <Atividade> [minutes:: <N>] #habit #fitness #fitness/cardio #log/fitness 📅 {date_str} ✅ {date_str}` (é uma tarefa já marcada como feita, não um bullet comum — mesmo assim vai dentro de Anotações) |
+| Comeu algo (refeição, lanche) | — | `- Comi <descrição do que foi dito> [calories:: <N>] #log/fitness #fitness/calories` |
+| Pagou/gastou algo (conta, compra) | — | `- Paguei <descrição do que foi dito> [amount:: <N>] [category:: <opcional>] #log/finance #finance/expense` |
+
+Calorias é um caso especial: se a pessoa disse um número explícito, use-o. Se ela
+só descreveu a comida (ex: "comi um prato de arroz, feijão e frango"), ESTIME
+um valor razoável de calorias pra aquela porção usando seu próprio
+conhecimento geral de nutrição, e deixe isso claro escrevendo "(estimativa)"
+depois da descrição — não deixe de registrar só por não ter um número exato
+dito em voz alta, mas também não finja que foi a pessoa quem disse o número.
+Se quiser, adicione `[meal:: <café da manhã|almoço|lanche|jantar>]` quando der
+pra inferir da fala ou do horário do áudio ({time_str}); é opcional.
+
+Gastos são o oposto: NUNCA estime ou invente um valor em dinheiro. Só registre
+como log de gasto se a pessoa disse um número explícito. Se ela só falou que
+gastou/pagou algo sem dizer quanto (ex: "paguei o conduíte hoje"), NÃO adivinhe
+o valor — registre como comentário (categoria C) contando o que foi dito, sem
+o campo `amount`. `category` é opcional, mas quando preencher, escolha SEMPRE
+uma destas (não invente outras — é o que mantém o total por categoria em
+`110 Finanças/Histórico Financeiro.md` consistente):
+`Mercado` (supermercado), `Restaurantes` (restaurante/delivery/lanche),
+`Moradia` (condomínio, financiamento/aluguel, luz, internet, IPTU), `Saúde`,
+`Transporte`, `Educação` (cursos, livros), `Lazer` (roupas, entretenimento,
+compras pessoais), `Pets`, `Negócio` (despesas do CNPJ), `Outros`. Se não
+tiver certeza de qual categoria usar, deixe o campo de fora em vez de chutar.
+
+Se não achar uma nota existente com o nome exato (peça/exercício novo), ainda
+assim escreva o link `[[Nome Mais Provável]]` com o melhor nome que der pra
+inferir da fala — não deixe de registrar só por não achar a nota — mas avise
+isso na linha de RESUMO no final.
+
+**C) COMENTÁRIO / anotação livre** — não é nem tarefa nem um log reconhecido, e
+NÃO se refere a nenhuma tarefa existente ou nova (pensamento solto, observação,
+ideia, lembrete sem ação clara). Vai em `### 📓 Anotações` como bullet simples,
+texto limpo (remova cacoetes de fala tipo "é", "tipo assim", repetições) mas
+preservando sentido, tom e palavras do autor — não resuma, não invente, não
+adicione informação que não está na transcrição.
+
+**D) MARCAR TAREFA PENDENTE COMO FEITA** — a pessoa está dizendo que já
+concluiu algo que provavelmente já existe como tarefa (`- [ ]`) em algum lugar.
+Procure a tarefa correspondente dentro de `10 Daily/**` (que é o único lugar
+onde você pode escrever) — comece pela nota diária de hoje
+(`10 Daily/{date_str}.md`), depois `10 Daily/Tarefas Recorrentes.md`
+(contas/tarefas recorrentes tipo IPTU, condomínio, financiamento), e por
+último outras notas diárias recentes se fizer sentido.
+- Se achar uma correspondência clara e única: marque `[x]` e adicione
+  `✅ {date_str}` no fim da linha, sem alterar mais nada dela (preserve tags,
+  prioridade, recorrência etc. exatamente como estavam). Se a fala trouxe um
+  comentário sobre como foi (ex: "paguei com desconto", "demorou mais que o
+  esperado"), adicione como sub-bullet indentado logo abaixo:
+  `    - <comentário>`.
+- Se NÃO achar uma correspondência clara e única (ambíguo, ou a tarefa
+  provavelmente vive fora de `10 Daily/**`, como em `30 Projetos/` ou
+  `20 Pessoal/`, onde você não tem permissão de escrita): não marque nada a
+  esmo. Em vez disso, registre como comentário (categoria C) contando o que a
+  pessoa disse ter feito, e explique no RESUMO que não achou a tarefa original
+  pra marcar como concluída.
+
+Na dúvida entre A e C, prefira C (comentário) — não invente prazo nem
+transforme em tarefa algo que não foi claramente pedido como ação. Na dúvida
+entre D e C, também prefira C — é mais seguro registrar um comentário do que
+marcar a tarefa errada como concluída.
+
+## Passo 3 — Não edite mais nada
+
+Nenhum outro arquivo ou seção além do que foi descrito acima.
+
+## Passo 4 — Termine com o resumo
+
+Última linha da sua resposta, sozinha, formato exato:
+RESUMO: <frase curta em português dizendo o que foi adicionado e onde>
+
+Transcrição bruta do áudio (gravado em {date_str}, horário local {time_str}):
+---
+{transcript}
+---

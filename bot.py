@@ -43,7 +43,7 @@ WHISPER_COMPUTE_TYPE = os.environ.get(
 LOCAL_TIMEZONE = ZoneInfo(os.environ.get("LOCAL_TIMEZONE", "America/Sao_Paulo"))
 CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH", "claude")
 CLAUDE_CONFIG_DIR = os.environ.get("CLAUDE_CONFIG_DIR")  # opcional, equivalente a um alias tipo `claude-caio`
-CLAUDE_TIMEOUT_SECONDS = int(os.environ.get("CLAUDE_TIMEOUT_SECONDS", "180"))
+CLAUDE_TIMEOUT_SECONDS = int(os.environ.get("CLAUDE_TIMEOUT_SECONDS", "240"))
 
 AUDIO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -63,38 +63,9 @@ whisper_model = WhisperModel(
 )
 claude_lock = asyncio.Lock()
 
-CLAUDE_PROMPT_TEMPLATE = """\
-Você vai registrar a transcrição de um áudio pessoal na nota diária do Obsidian.
-
-Nota de destino: `10 Daily/{date_str}.md` (data local em que o áudio foi gravado).
-
-Passos:
-1. Se o arquivo `10 Daily/{date_str}.md` NÃO existir, crie-o seguindo exatamente a
-   mesma estrutura das notas diárias existentes nessa pasta (use `10 Daily/2025-10-13.md`
-   como referência de formato): frontmatter com `date_created: {date_str}T{time_str}`
-   (o horário em que o ÁUDIO foi gravado, não o horário atual de processamento),
-   `tags: ["daily-task"]`, `aliases` com a
-   data por extenso em português, no formato `DD/MM/YYYY` e por extenso com o ano;
-   heading `# Nota Diária: <dia da semana por extenso>, <data por extenso em português>`;
-   seção `### ✅ Tarefas Registradas` com um item vazio `- [ ]`; seção
-   `### 📓 Anotações`; e depois os blocos de query `tasks` de Atrasadas / Para Hoje /
-   Próximos 7 Dias, com as datas substituídas corretamente em relação a {date_str}
-   (mesma lógica de datas usada no template `_templates/generic_daily_note.md`).
-2. Se o arquivo já existir, NÃO mexa no frontmatter nem em nenhuma outra seção.
-3. Em ambos os casos, adicione UM bullet novo dentro da seção `### 📓 Anotações`
-   com o conteúdo da transcrição abaixo, levemente limpo (remova cacoetes de fala
-   tipo "é", "tipo assim", repetições, mas preserve o sentido, o tom e as palavras
-   do autor — não resuma, não invente e não adicione informação que não está na
-   transcrição).
-4. Não edite nenhum outro arquivo ou seção além dessa.
-5. Termine sua resposta com uma última linha, sozinha, no formato exato:
-   RESUMO: <uma frase curta em português dizendo o que você adicionou>
-
-Transcrição bruta do áudio (gravado em {date_str}, horário local {time_str}):
----
-{transcript}
----
-"""
+# Lido do disco a cada áudio (não carregado uma vez só na memória) — editar
+# esse arquivo muda o comportamento do bot no próximo áudio, sem reiniciar.
+PROMPT_TEMPLATE_PATH = BASE_DIR / "prompt_template.txt"
 
 
 def transcribe_audio(path: Path) -> str:
@@ -192,7 +163,17 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
-        prompt = CLAUDE_PROMPT_TEMPLATE.format(
+        try:
+            prompt_template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.error("Prompt template não encontrado em %s", PROMPT_TEMPLATE_PATH)
+            await message.reply_text(
+                f"⚠️ Não encontrei {PROMPT_TEMPLATE_PATH.name} — a transcrição "
+                f"foi salva em {transcript_path}, mas nada foi escrito no Obsidian."
+            )
+            return
+
+        prompt = prompt_template.format(
             date_str=date_str, time_str=time_str, transcript=transcript
         )
 

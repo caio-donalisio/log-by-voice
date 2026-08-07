@@ -124,9 +124,36 @@ O WSL2 não usa o Agendador de Tarefas do Windows diretamente. Duas opções:
 3. Transcreve localmente com faster-whisper (`medium`, português) e salva um
    `.txt` ao lado do áudio.
 4. Roda `claude -p "<prompt>" --permission-mode acceptEdits` com o diretório
-   de trabalho no vault. O prompt instrui o Claude a criar/atualizar
-   `10 Daily/<data-do-áudio>.md` com um bullet novo na seção "Anotações".
+   de trabalho no vault. O prompt vem de `prompt_template.txt`, lido do disco
+   a cada áudio (não fica fixo na memória do processo) — editar esse arquivo
+   muda o comportamento do bot a partir do próximo áudio, sem precisar
+   reiniciar. O prompt instrui o Claude a criar/atualizar
+   `10 Daily/<data-do-áudio>.md` (e, quando for concluir uma tarefa
+   recorrente, também `10 Daily/Tarefas Recorrentes.md`), classificando cada
+   item da fala em: tarefa nova (checkbox em "Tarefas Registradas", com
+   data/prioridade só se foram ditas), log de hábito (peso, piano, musculação,
+   cardio, calorias, gastos — formatado com os campos e tags que os gráficos
+   do vault esperam, ex: `[weight:: 82] #log/fitness #fitness/weight`; pra
+   calorias, se a pessoa só descreveu a comida sem dar um número, o Claude
+   estima e marca como "(estimativa)" em vez de inventar que foi um número
+   dito — já pra gastos é o oposto, nunca estima valor em dinheiro, só
+   registra se um número foi dito), comentário livre (bullet simples, texto
+   limpo, sem ligação com nenhuma tarefa) ou conclusão de uma tarefa pendente
+   já existente (procura a tarefa em `10 Daily/**`, marca `[x]` e adiciona
+   `✅ <data>` sem alterar o resto da linha). Comentários ditos sobre uma
+   tarefa (nova ou concluída) entram como sub-bullet indentado abaixo dela,
+   em vez de virar uma anotação solta. Antes de escrever um log, o Claude lê
+   `10 Daily/_README.md` e a pasta do domínio (`70 Piano/**`,
+   `100 Fitness/**`) pra pegar o nome exato de peça/exercício — sem isso o
+   link não alimenta o histórico daquela nota. Se não conseguir achar com
+   segurança a tarefa que a pessoa diz ter concluído (ou se ela vive fora de
+   `10 Daily/**`, como em `30 Projetos/`), o Claude não arrisca
+   marcar a errada — só registra um comentário contando o que foi dito e
+   avisa no resumo.
 5. As permissões do Claude nesse projeto (`Obsidian Vault/.claude/settings.json`)
-   restringem escrita a `10 Daily/**` e bloqueiam Bash/rede — o Claude só
-   pode editar a nota diária, nada mais.
+   permitem leitura do vault inteiro (pra pegar nomes exatos e formato, e pra
+   localizar tarefas existentes), mas restringem escrita a `10 Daily/**` e
+   bloqueiam Bash/rede — o Claude só pode editar dentro dessa pasta, nada
+   fora dela. Na prática isso cobre a nota diária e `Tarefas Recorrentes.md`,
+   mas não tarefas em `30 Projetos/` ou `20 Pessoal/`.
 6. O bot responde no Telegram com um resumo curto do que foi adicionado.
