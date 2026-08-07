@@ -34,6 +34,7 @@ WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "medium")
 WHISPER_LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "pt")
 LOCAL_TIMEZONE = ZoneInfo(os.environ.get("LOCAL_TIMEZONE", "America/Sao_Paulo"))
 CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH", "claude")
+CLAUDE_CONFIG_DIR = os.environ.get("CLAUDE_CONFIG_DIR")  # opcional, equivalente a um alias tipo `claude-caio`
 CLAUDE_TIMEOUT_SECONDS = int(os.environ.get("CLAUDE_TIMEOUT_SECONDS", "180"))
 
 AUDIO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -91,6 +92,10 @@ def transcribe_audio(path: Path) -> str:
 
 
 def run_claude_cli(prompt: str) -> tuple[bool, str]:
+    env = os.environ.copy()
+    if CLAUDE_CONFIG_DIR:
+        env["CLAUDE_CONFIG_DIR"] = CLAUDE_CONFIG_DIR
+
     try:
         result = subprocess.run(
             [
@@ -103,6 +108,7 @@ def run_claude_cli(prompt: str) -> tuple[bool, str]:
                 "text",
             ],
             cwd=str(OBSIDIAN_VAULT_DIR),
+            env=env,
             capture_output=True,
             text=True,
             timeout=CLAUDE_TIMEOUT_SECONDS,

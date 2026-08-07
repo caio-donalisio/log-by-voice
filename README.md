@@ -44,6 +44,14 @@ Preencha:
 - `TELEGRAM_BOT_TOKEN`: o token do seu bot (@BotFather).
 - `ALLOWED_TELEGRAM_USER_ID`: seu ID numérico do Telegram (mande uma
   mensagem para `@userinfobot` pra descobrir).
+- `CLAUDE_CLI_PATH` / `CLAUDE_CONFIG_DIR`: se você usa um alias tipo
+  `claude-caio` no seu shell pra rodar o Claude Code com um perfil/config
+  específico (`alias claude-caio='CLAUDE_CONFIG_DIR="$HOME/.claude-caio" claude'`),
+  **não** coloque o nome do alias em `CLAUDE_CLI_PATH` — o bot chama o
+  processo direto, sem passar por um shell, então aliases não existem pra
+  ele. Deixe `CLAUDE_CLI_PATH=claude` e defina `CLAUDE_CONFIG_DIR` com o
+  mesmo caminho que o alias usa; o bot reproduz o efeito passando essa
+  variável de ambiente pro subprocesso.
 - Os demais campos já vêm com os valores certos pra essa máquina.
 
 ## 4. Testar manualmente
