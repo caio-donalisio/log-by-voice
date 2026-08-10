@@ -129,7 +129,22 @@ def parse_relative_date(text: str, today: date | None = None) -> str | None:
             except ValueError:
                 return None
 
-    # 4. Day-of-week: "domingo", "segunda-feira", "na terça"
+    # 4. "daqui a X dias/semanas/meses" or "em X dias/semanas/meses"
+    m = re.search(
+        r"\b(?:daqui\s+a|em)\s+(\d+)\s+(dias?|semanas?|m[êe]s(?:es)?)\b",
+        text, re.IGNORECASE,
+    )
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2).lower()
+        if "semana" in unit:
+            n *= 7
+        elif "mês" in unit or "mes" in unit:
+            n *= 30
+        target = today + timedelta(days=n)
+        return target.isoformat()
+
+    # 5. Day-of-week
     for name, dow in _WEEKDAY_MAP.items():
         if re.search(rf"\b(?:no\s+|na\s+|neste\s+|nessa\s+|pr[óo]xim[oa]\s+)?{name}\b", text, re.IGNORECASE):
             days_ahead = dow - today.weekday()
@@ -140,7 +155,7 @@ def parse_relative_date(text: str, today: date | None = None) -> str | None:
                 target += timedelta(days=7)
             return target.isoformat()
 
-    # 4. Relative expressions (weeks, months)
+    # 6. Relative expressions (weeks, months)
     for pattern, days_offset in _RELATIVE_PATTERNS:
         if pattern.search(text):
             target = today + timedelta(days=days_offset)
