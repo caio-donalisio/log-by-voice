@@ -41,6 +41,7 @@ WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.environ.get(
     "WHISPER_COMPUTE_TYPE", "int8" if WHISPER_DEVICE == "cpu" else "auto"
 )
+WHISPER_TIMEOUT_SECONDS = int(os.environ.get("WHISPER_TIMEOUT_SECONDS", "300"))
 LOCAL_TIMEZONE = ZoneInfo(os.environ.get("LOCAL_TIMEZONE", "America/Sao_Paulo"))
 CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH", "claude")
 CLAUDE_CONFIG_DIR = os.environ.get("CLAUDE_CONFIG_DIR")  # opcional, equivalente a um alias tipo `claude-caio`
@@ -308,7 +309,8 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     audio_path = AUDIO_LOGS_DIR / f"{stamp}_{message.message_id}.ogg"
     transcript_path = audio_path.with_suffix(".txt")
 
-    if audio_path.exists():
+    # Only skip if BOTH audio AND transcript exist (crashes leave orphan .ogg)
+    if audio_path.exists() and transcript_path.exists():
         logger.info("Áudio %s já processado, ignorando duplicata.", audio_path.name)
         return
 
@@ -320,7 +322,19 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         loop = asyncio.get_running_loop()
 
         try:
-            transcript = await loop.run_in_executor(None, transcribe_audio, audio_path)
+            transcript = await asyncio.wait_for(
+                loop.run_in_executor(None, transcribe_audio, audio_path),
+                timeout=WHISPER_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.error("Transcrição de %s excedeu timeout (%ds)", audio_path, WHISPER_TIMEOUT_SECONDS)
+            await message.reply_text(
+                "⚠️ A transcrição demorou demais e foi cancelada. "
+                "O áudio foi salvo e será reprocessado na próxima tentativa."
+            )
+            # Delete transcript_path so it gets retried (not skipped as duplicate)
+            transcript_path.unlink(missing_ok=True)
+            return
         except Exception:
             logger.exception("Falha ao transcrever %s", audio_path)
             await message.reply_text(
@@ -426,6 +440,28 @@ def main() -> None:
         logger.error(
             "VAULT INACESSÍVEL: %s — o bot vai iniciar mas falhará ao processar áudios.",
             OBSIDIAN_VAULT_DIR,
+        )
+
+    # Recover orphaned audio files (crashed before transcription completed)
+    _recover_orphans()
+
+
+def _recover_orphans() -> None:
+    """Delete .ogg files that have no matching .txt (crashed before transcription).
+
+    The Telegram update was already acknowledged, so these can't be re-fetched
+    via polling.  Deleting the .ogg allows the user to re-send the audio.
+    """
+    orphans = []
+    for ogg in AUDIO_LOGS_DIR.glob("*.ogg"):
+        txt = ogg.with_suffix(".txt")
+        if not txt.exists():
+            orphans.append(ogg)
+    if orphans:
+        logger.warning(
+            "Encontrados %d áudio(s) órfão(s) (sem transcrição): %s",
+            len(orphans),
+            [o.name for o in orphans],
         )
     backoff_seconds = 5
     while True:
