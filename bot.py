@@ -169,8 +169,12 @@ def _dispatch_item(
     vault_dir: Path,
     daily_note_path: Path,
     warnings_out: list[str],
-) -> None:
-    """Format and write a single validated item to the vault."""
+) -> str | None:
+    """Format and write a single validated item to the vault.
+
+    Returns the relative path of the file that was modified, or ``None``
+    if nothing was written (e.g. duplicate recurring task).
+    """
     from formatter import (
         format_task, format_comment, format_weight, format_cardio,
         format_food, format_expense, format_piano, format_lifting,
@@ -185,6 +189,7 @@ def _dispatch_item(
     if item_type == "task":
         line = format_task(data, time_str)
         append_to_section(daily_note_path, "### ✅ Tarefas Registradas", [line])
+        return str(_rel_path(daily_note_path, vault_dir))
 
     elif item_type == "habit_log":
         habit = item.habit
@@ -213,12 +218,14 @@ def _dispatch_item(
                     f"'{data.exercise_hint}', usei [[{exercise}]]"
                 )
         else:
-            return
+            return None
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
+        return str(_rel_path(daily_note_path, vault_dir))
 
     elif item_type == "comment":
         line = format_comment(data)
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
+        return str(_rel_path(daily_note_path, vault_dir))
 
     elif item_type == "mark_done":
         result_path, warns = find_and_mark_done(
@@ -227,6 +234,7 @@ def _dispatch_item(
             comment=data.comment,
         )
         warnings_out.extend(warns)
+        return str(_rel_path(Path(result_path), vault_dir)) if result_path else None
 
     elif item_type == "correction":
         result_path, warns = find_and_correct(
@@ -234,12 +242,14 @@ def _dispatch_item(
             vault_dir, data.search_scope,
         )
         warnings_out.extend(warns)
+        return str(_rel_path(Path(result_path), vault_dir)) if result_path else None
 
     elif item_type == "complement":
         result_path, warns = find_and_complement(
             data.search_hint, data.detail, vault_dir,
         )
         warnings_out.extend(warns)
+        return str(_rel_path(Path(result_path), vault_dir)) if result_path else None
 
     elif item_type == "recurring_task":
         line, warn = format_recurring(data, date_str, vault_dir)
@@ -248,8 +258,22 @@ def _dispatch_item(
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "a", encoding="utf-8") as f:
                 f.write("\n" + line + "\n")
+            if warn:
+                warnings_out.append(warn)
+            return str(_rel_path(target, vault_dir))
         if warn:
             warnings_out.append(warn)
+        return None
+
+    return None
+
+
+def _rel_path(abs_path: Path, vault_dir: Path) -> Path:
+    """Return path relative to vault root."""
+    try:
+        return abs_path.relative_to(vault_dir)
+    except ValueError:
+        return abs_path
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -338,14 +362,19 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             # Phase 4 — Format + write each item
             warnings: list[str] = []
+            target_files: list[str] = []
             for item in items:
-                _dispatch_item(
+                target = _dispatch_item(
                     item, date_str, time_str, OBSIDIAN_VAULT_DIR,
                     daily_note_path, warnings,
                 )
+                if target:
+                    target_files.append(target)
 
-            # Phase 4 — Generate RESUMO
-            resumo = generate_resumo(items, warnings, daily_created)
+            # Phase 5 — Generate RESUMO
+            resumo = generate_resumo(
+                items, target_files, warnings, daily_created,
+            )
 
         except Exception:
             logger.exception("Falha no pipeline de classificação")
