@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 HIGH_CONFIDENCE = 0.80    # Use item directly, no LLM needed
-AMBIGUITY_GAP = 0.20      # If top-2 scores differ by less than this → ambiguous
+AMBIGUITY_GAP = 0.10      # If top-2 scores differ by less than this → ambiguous
 
 
 # ---------------------------------------------------------------------------

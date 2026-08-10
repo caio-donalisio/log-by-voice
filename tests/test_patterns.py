@@ -84,13 +84,49 @@ class TestPatternMatching:
         assert len(items) == 1
         assert items[0]["type"] == "correction"
 
-    def test_mark_done(self):
+    def test_mark_done_explicit(self):
+        """Explicit completion phrases → high confidence, used directly."""
         items, unmatched = classify(
             "já paguei a conta de luz.",
             _registry(),
         )
         assert len(items) == 1
         assert items[0]["type"] == "mark_done"
+        assert items[0]["_confidence"] == 0.92  # explicit → boosted
+
+    def test_mark_done_past_tense_low_conf(self):
+        """Past-tense verbs → low confidence → unmatched (goes to LLM)."""
+        items, unmatched = classify(
+            "organizei os arquivos de chinês.",
+            _registry(),
+        )
+        # 0.75 < 0.80 threshold → unmatched → LLM decides
+        assert len(items) == 0
+
+    def test_mark_done_explicit_variants(self):
+        """All explicit forms should match at high confidence."""
+        for phrase in [
+            "concluí o relatório",
+            "terminei o livro",
+            "finalizei a tarefa",
+            "acabei de arrumar o quarto",
+            "tá feito o documento",
+            "já paguei a conta",
+            "pronto, o relatório",
+        ]:
+            items, _ = classify(phrase, _registry())
+            assert len(items) == 1, f"'{phrase}' should match mark_done"
+            assert items[0]["_confidence"] == 0.92
+
+    def test_fiz_not_mark_done(self):
+        """'fiz' alone should NOT trigger mark_done (reserved for lifting/cardio)."""
+        items, _ = classify("fiz o treino", _registry())
+        assert len(items) == 0
+
+    def test_comprei_not_mark_done(self):
+        """'comprei' alone should NOT trigger mark_done (reserved for expense)."""
+        items, _ = classify("comprei pão", _registry())
+        assert len(items) == 0
 
     def test_comment_goes_unmatched(self):
         """Free-form thoughts should not match any pattern."""
