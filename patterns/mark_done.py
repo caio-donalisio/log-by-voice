@@ -13,9 +13,17 @@ def _build(match, text: str) -> dict:
     # Extract task hint — what was completed
     hint = text
 
-    # Remove trigger phrases
+    # Remove trigger phrases (including past-tense verbs)
     hint = re.sub(
-        r"\b(?:conclu[íi]|terminei|j[áa]\s+(?:fiz|paguei|terminei|comprei)|finalizei|acabei\s+de)\b",
+        r"\b(?:conclu[íi]|terminei|finalizei|acabei\s+de|organizei|resolvi|arrumei|limpei|entreguei|mandei|enviei|liguei|marquei|agendei|estudei|consertei|providenciei|verifiquei|chequei|confirmei)\b",
+        "", hint, flags=re.IGNORECASE,
+    )
+    hint = re.sub(
+        r"\bj[áa]\s+(?:fiz|paguei|terminei|comprei|resolvi|organizei|arrumei)\b",
+        "", hint, flags=re.IGNORECASE,
+    )
+    hint = re.sub(
+        r"\b(?:t[áa]\s+)?(?:feito|pago|conclu[íi]do|pronto)\b",
         "", hint, flags=re.IGNORECASE,
     )
     # Remove filler
@@ -37,12 +45,30 @@ mark_done_pattern = Pattern(
     category="mark_done",
     habit=None,
     triggers=[
+        # Explicit completion
         r"\bconclu[íi]\b",
         r"\bterminei\b",
-        r"\bj[áa]\s+(?:fiz|paguei|terminei|comprei|resolvi)\b",
         r"\bfinalizei\b",
         r"\bacabei\s+de\b",
         r"\b(?:t[áa]\s+)?(?:feito|pago|conclu[íi]do|pronto)\b",
+        r"\bj[áa]\s+(?:fiz|paguei|terminei|comprei|resolvi|organizei|arrumei)\b",
+        # Natural past tense — action completed
+        r"\borganizei\b",
+        r"\bresolvi\b",
+        r"\barrumei\b",
+        r"\blimpei\b",
+        r"\bentreguei\b",
+        r"\bmandei\b",
+        r"\benviei\b",
+        r"\bliguei\b",
+        r"\bmarquei\b",
+        r"\bagendei\b",
+        r"\bestudei\b",
+        r"\bconsertei\b",
+        r"\bprovidenciei\b",
+        r"\bverifiquei\b",
+        r"\bchequei\b",
+        r"\bconfirmei\b",
     ],
     regex=r".*",
     confidence=0.80,
