@@ -1,0 +1,37 @@
+Classifique os segmentos abaixo de uma transcrição de áudio pessoal em
+português. Retorne APENAS um array JSON — sem markdown, sem explicação.
+
+Segmentos NÃO classificados (classifique apenas estes):
+---
+{unmatched_text}
+---
+
+Contexto — itens JÁ classificados (use como contexto, NÃO os reclassifique):
+{already_classified}
+
+## Schema
+
+Cada elemento do array: {{ "type": "...", "habit": "...", "data": {{ }} }}
+type ∈ ["task","habit_log","comment","mark_done","correction","complement","recurring_task"]
+habit (obrigatório se type=habit_log) ∈ ["weight","piano","lifting","cardio","food","expense"]
+
+Campos data por tipo:
+- task: description (str), priority (null|"urgente"|"alta"|"média"), due_date (null|"YYYY-MM-DD"), time (null|"HH:MM"), comment (str|null)
+- habit_log/weight: weight_kg (float)
+- habit_log/piano: piece_hint (str), minutes (int|null), action (null|"practice"|"study")
+- habit_log/lifting: exercise_hint (str), weight_kg (float|null), reps (int|null), sets (int|null)
+- habit_log/cardio: activity (str), minutes (int|null)
+- habit_log/food: description (str), calories (int|null), estimated (bool), meal (null|"café da manhã"|"almoço"|"lanche"|"jantar")
+- habit_log/expense: description (str), amount (float|null — null se sem número), category (null|"Mercado"|"Restaurantes"|"Moradia"|"Saúde"|"Transporte"|"Educação"|"Lazer"|"Pets"|"Negócio"|"Outros")
+- comment: text (str)
+- mark_done: task_hint (str), comment (str|null), is_recurring (bool)
+- correction: search_hint (str), new_field (str), new_value (str), search_scope ("today"|"recent")
+- complement: search_hint (str), detail (str)
+- recurring_task: description (str), frequency (str — "every month", "every week", etc.), due_day (int|null), is_payment (bool), priority (null|"urgente"|"alta"|"média"), due_date (null|"YYYY-MM-DD")
+
+## Regras
+1. Na dúvida, prefira comment.
+2. NUNCA invente datas, valores ou números.
+3. expense: NUNCA estime amount — se não foi dito número, amount=null.
+4. food: estime calorias se a pessoa descreveu a comida sem número; marque estimated=true.
+5. NÃO leia nem escreva arquivos. Apenas classifique e retorne JSON.

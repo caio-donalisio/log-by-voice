@@ -69,6 +69,23 @@ claude_lock = asyncio.Lock()
 PROMPT_TEMPLATE_PATH = BASE_DIR / "prompt_template.txt"
 
 
+def _source_env_file(path: Path, target_env: dict[str, str]) -> None:
+    """Parse a shell-style env file (export KEY=VALUE) into *target_env*."""
+    import re
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Strip "export " prefix
+        line = re.sub(r"^export\s+", "", line)
+        if "=" in line:
+            key, _, value = line.partition("=")
+            value = value.strip().strip("'").strip('"')
+            target_env[key.strip()] = value
+
+
 def transcribe_audio(path: Path) -> str:
     segments, _info = whisper_model.transcribe(str(path), language=WHISPER_LANGUAGE)
     return " ".join(segment.text.strip() for segment in segments).strip()
@@ -78,6 +95,11 @@ def run_claude_cli(prompt: str) -> tuple[bool, str]:
     env = os.environ.copy()
     if CLAUDE_CONFIG_DIR:
         env["CLAUDE_CONFIG_DIR"] = CLAUDE_CONFIG_DIR
+
+    # Load DeepSeek env vars if available
+    _deepseek_env = Path(os.environ.get("DEEPSEEK_ENV_FILE", Path.home() / "deepseek.sh"))
+    if _deepseek_env.exists():
+        _source_env_file(_deepseek_env, env)
 
     try:
         result = subprocess.run(
@@ -132,11 +154,102 @@ def run_claude_cli(prompt: str) -> tuple[bool, str]:
 
 
 def extract_resumo(claude_stdout: str) -> str:
+    """Deprecated — kept for reference.  New pipeline uses formatter.resumo."""
     for line in reversed(claude_stdout.splitlines()):
         line = line.strip()
         if line.startswith("RESUMO:"):
             return line[len("RESUMO:"):].strip()
     return claude_stdout[-300:] if claude_stdout else "(sem saída do Claude)"
+
+
+def _dispatch_item(
+    item,
+    date_str: str,
+    time_str: str,
+    vault_dir: Path,
+    daily_note_path: Path,
+    warnings_out: list[str],
+) -> None:
+    """Format and write a single validated item to the vault."""
+    from formatter import (
+        format_task, format_comment, format_weight, format_cardio,
+        format_food, format_expense, format_piano, format_lifting,
+        find_and_mark_done, find_and_correct, find_and_complement,
+        format_recurring, append_to_section,
+        resolve_piece, resolve_exercise,
+    )
+
+    item_type = item.type
+    data = item.data
+
+    if item_type == "task":
+        line = format_task(data)
+        append_to_section(daily_note_path, "### ✅ Tarefas Registradas", [line])
+
+    elif item_type == "habit_log":
+        habit = item.habit
+        if habit == "weight":
+            line = format_weight(data)
+        elif habit == "cardio":
+            line = format_cardio(data, date_str)
+        elif habit == "food":
+            line = format_food(data)
+        elif habit == "expense":
+            line = format_expense(data)
+        elif habit == "piano":
+            piece, score = resolve_piece(data.piece_hint, vault_dir)
+            line = format_piano(data, piece)
+            if score < 1.0:
+                warnings_out.append(
+                    f"Não encontrei nota existente para '{data.piece_hint}', "
+                    f"usei [[{piece}]]"
+                )
+        elif habit == "lifting":
+            exercise, score = resolve_exercise(data.exercise_hint, vault_dir)
+            line = format_lifting(data, exercise)
+            if score < 1.0 and score > 0.0:
+                warnings_out.append(
+                    f"Não encontrei nota existente para "
+                    f"'{data.exercise_hint}', usei [[{exercise}]]"
+                )
+        else:
+            return
+        append_to_section(daily_note_path, "### 📓 Anotações", [line])
+
+    elif item_type == "comment":
+        line = format_comment(data)
+        append_to_section(daily_note_path, "### 📓 Anotações", [line])
+
+    elif item_type == "mark_done":
+        result_path, warns = find_and_mark_done(
+            data.task_hint, date_str, vault_dir,
+            is_recurring=data.is_recurring,
+            comment=data.comment,
+        )
+        warnings_out.extend(warns)
+
+    elif item_type == "correction":
+        result_path, warns = find_and_correct(
+            data.search_hint, data.new_field, data.new_value,
+            vault_dir, data.search_scope,
+        )
+        warnings_out.extend(warns)
+
+    elif item_type == "complement":
+        result_path, warns = find_and_complement(
+            data.search_hint, data.detail, vault_dir,
+        )
+        warnings_out.extend(warns)
+
+    elif item_type == "recurring_task":
+        line, warn = format_recurring(data, date_str, vault_dir)
+        if line:
+            target = vault_dir / "10 Daily" / "Tarefas Recorrentes.md"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "a", encoding="utf-8") as f:
+                f.write("\n" + line + "\n")
+        if warn:
+            warnings_out.append(warn)
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -185,30 +298,39 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         try:
-            prompt_template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            logger.error("Prompt template não encontrado em %s", PROMPT_TEMPLATE_PATH)
+            from classifier import classify_transcript
+            from formatter import ensure_daily_note, generate_resumo
+
+            # Phase 1 — Classify (pattern matching + optional LLM fallback)
+            items, _unmatched = await loop.run_in_executor(
+                None, classify_transcript, transcript, run_claude_cli
+            )
+
+            # Phase 2 — Ensure daily note exists
+            daily_note_path, daily_created = ensure_daily_note(
+                OBSIDIAN_VAULT_DIR, date_str, time_str
+            )
+
+            # Phase 3 — Format + write each item
+            warnings: list[str] = []
+            for item in items:
+                _dispatch_item(
+                    item, date_str, time_str, OBSIDIAN_VAULT_DIR,
+                    daily_note_path, warnings,
+                )
+
+            # Phase 4 — Generate RESUMO
+            resumo = generate_resumo(items, warnings, daily_created)
+
+        except Exception:
+            logger.exception("Falha no pipeline de classificação")
             await message.reply_text(
-                f"⚠️ Não encontrei {PROMPT_TEMPLATE_PATH.name} — a transcrição "
-                f"foi salva em {transcript_path}, mas nada foi escrito no Obsidian."
+                "⚠️ A transcrição foi salva, mas houve um erro ao processar: "
+                f"verifique o log. Transcrição: {transcript_path}"
             )
             return
 
-        prompt = prompt_template.format(
-            date_str=date_str, time_str=time_str, transcript=transcript
-        )
-
-        success, output = await loop.run_in_executor(None, run_claude_cli, prompt)
-
-    if success:
-        resumo = extract_resumo(output)
-        await message.reply_text(f"✅ {resumo}")
-    else:
-        logger.error("Falha ao rodar Claude CLI: %s", output)
-        await message.reply_text(
-            "⚠️ A transcrição foi salva, mas houve um erro ao gerar a nota: "
-            f"{output}\n\nTranscrição: {transcript_path}"
-        )
+    await message.reply_text(f"✅ {resumo}")
 
 
 def build_application() -> Application:
