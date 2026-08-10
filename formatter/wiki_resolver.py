@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from patterns import normalize
+from text_utils import normalize
 
 logger = logging.getLogger(__name__)
 

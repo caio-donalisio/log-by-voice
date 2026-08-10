@@ -21,6 +21,7 @@ from patterns.lifting import lifting_pattern
 from patterns.piano_cardio import piano_pattern, cardio_pattern
 from patterns.expense_food import expense_pattern, food_pattern
 from patterns.task_correction import task_pattern, correction_pattern
+from patterns.mark_done import mark_done_pattern
 from formatter.schema import validate_item
 
 if TYPE_CHECKING:
@@ -42,6 +43,7 @@ _REGISTRY.register_all([
     food_pattern,
     task_pattern,
     correction_pattern,
+    mark_done_pattern,
 ])
 
 
@@ -71,9 +73,9 @@ def classify_transcript(
     items = [_safe_validate(r) for r in raw_items]
 
     n_pattern = len(items)
-    n_unmatched = len(unmatched)
 
     if not unmatched:
+        stats.record(items, "")
         logger.info(
             "LLM skipped: todos os %d segmentos resolvidos por pattern",
             n_pattern,
@@ -100,6 +102,7 @@ def classify_transcript(
             "_confidence": 0.0,
         })
         items.append(fallback)
+        stats.record(items, unmatched)
         return items, unmatched
 
     # Parse LLM JSON
@@ -115,6 +118,7 @@ def classify_transcript(
         len(llm_items), len(items),
     )
 
+    stats.record(items, unmatched if not llm_items else "")
     return items, unmatched if not llm_items else ""
 
 
@@ -208,3 +212,73 @@ def _parse_llm_output(output: str) -> list[dict]:
         return items
 
     return []
+
+
+# ---------------------------------------------------------------------------
+# Stats tracking
+# ---------------------------------------------------------------------------
+
+class Stats:
+    """Collects classification stats across audio processing runs."""
+
+    def __init__(self) -> None:
+        self.total_audios = 0
+        self.total_segments = 0
+        self.pattern_matches = 0
+        self.llm_calls = 0
+        self.llm_skips = 0
+        self.by_pattern: dict[str, int] = {}
+        self.by_type: dict[str, int] = {}
+
+    def record(self, items: list[Item], unmatched: str) -> None:
+        self.total_audios += 1
+        self.total_segments += len(items) + (1 if unmatched else 0)
+
+        for item in items:
+            if item.source.startswith("pattern:"):
+                self.pattern_matches += 1
+                name = item.source.split(":", 1)[1]
+                self.by_pattern[name] = self.by_pattern.get(name, 0) + 1
+            elif item.source == "llm":
+                self.by_pattern["llm"] = self.by_pattern.get("llm", 0) + 1
+
+            self.by_type[item.type] = self.by_type.get(item.type, 0) + 1
+
+        if unmatched:
+            self.llm_calls += 1
+        else:
+            self.llm_skips += 1
+
+    def summary(self) -> str:
+        if self.total_audios == 0:
+            return "Stats: sem dados"
+
+        pattern_rate = (
+            100 * self.pattern_matches / max(self.total_segments, 1)
+        )
+        llm_rate = 100 * self.llm_calls / max(self.total_audios, 1)
+
+        lines = [
+            f"Stats: {self.total_audios} áudios, {self.total_segments} segmentos",
+            f"  Pattern match: {self.pattern_matches} ({pattern_rate:.0f}%)",
+            f"  LLM fallback: {self.llm_calls}/{self.total_audios} áudios ({llm_rate:.0f}%)",
+            f"  LLM skips: {self.llm_skips} áudios (100% pattern)",
+        ]
+        if self.by_pattern:
+            lines.append("  By pattern:")
+            for name, count in sorted(
+                self.by_pattern.items(), key=lambda x: -x[1]
+            ):
+                lines.append(f"    {name}: {count}")
+        if self.by_type:
+            lines.append("  By type:")
+            for t, count in sorted(
+                self.by_type.items(), key=lambda x: -x[1]
+            ):
+                lines.append(f"    {t}: {count}")
+
+        return "\n".join(lines)
+
+
+# Global instance
+stats = Stats()

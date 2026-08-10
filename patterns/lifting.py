@@ -8,18 +8,40 @@ from typing import Any
 from patterns import Pattern
 
 
+# Map Portuguese number words to ints
+_NUM_WORDS: dict[str, int] = {
+    "um": 1, "uma": 1, "dois": 2, "duas": 2,
+    "três": 3, "tres": 3, "quatro": 4, "cinco": 5,
+    "seis": 6, "sete": 7, "oito": 8, "nove": 9, "dez": 10,
+}
+
+
+def _extract_number(text: str, pattern: str) -> int | None:
+    """Try to find a number (digit or word) matching *pattern*."""
+    # Try digit first
+    m = re.search(pattern, text)
+    if m and m.group(1):
+        return int(m.group(1))
+    # Try number word
+    for word, val in _NUM_WORDS.items():
+        word_pat = pattern.replace(r"\d+", word)
+        if re.search(word_pat, text):
+            return val
+    return None
+
+
 def _build(match, text: str) -> dict:
     data: dict[str, Any] = {}
 
     # Parse sets
-    m = re.search(r"(?P<sets>\d+)\s*(?:s[ée]ries?|series?|x)", text)
-    if m:
-        data["sets"] = int(m.group("sets"))
+    sets = _extract_number(text, r"(?P<n>\d+)\s*(?:s[ée]ries?|series?|x)")
+    if sets is not None:
+        data["sets"] = sets
 
     # Parse reps
-    m = re.search(r"(?P<reps>\d+)\s*(?:repeti[çc][õo]es|reps?|repeti[çc]|rep)", text)
-    if m:
-        data["reps"] = int(m.group("reps"))
+    reps = _extract_number(text, r"(?P<n>\d+)\s*(?:repeti[çc][õo]es|reps?|repeti[çc]|rep)")
+    if reps is not None:
+        data["reps"] = reps
 
     # Parse weight
     m = re.search(
@@ -33,7 +55,14 @@ def _build(match, text: str) -> dict:
     exercise_text = text
     # Remove leading filler verbs
     exercise_text = re.sub(
-        r"\b(?:fiz|fazer|fizemos|treinei|malhei|treinar|malhar)\b",
+        r"\b(?:fiz|fazer|fizemos|treinei|malhei|treinar|malhar|hoje|eu)\b",
+        "",
+        exercise_text,
+        flags=re.IGNORECASE,
+    )
+    # Remove Portuguese number words
+    exercise_text = re.sub(
+        r"\b(?:três|tres|duas|dois|uma|um|quatro|cinco|seis|sete|oito|nove|dez)\b",
         "",
         exercise_text,
         flags=re.IGNORECASE,
@@ -45,8 +74,10 @@ def _build(match, text: str) -> dict:
         exercise_text,
     )
     exercise_text = re.sub(r"\d+(?:[.,]\d+)?", "", exercise_text)
-    # Remove lingering connectors
+    # Remove lingering connectors and punctuation
     exercise_text = re.sub(r"\s+de\s+", " ", exercise_text)
+    exercise_text = re.sub(r"^[,\s]+", "", exercise_text)
+    exercise_text = re.sub(r"[,\s]+$", "", exercise_text)
     exercise_text = exercise_text.strip().rstrip(".")
     if exercise_text:
         data["exercise_hint"] = exercise_text

@@ -11,7 +11,8 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from patterns import Pattern, PatternRegistry, clean_segment, normalize
+from patterns import Pattern, PatternRegistry
+from text_utils import clean_segment, normalize
 
 if TYPE_CHECKING:
     from formatter.schema import Item

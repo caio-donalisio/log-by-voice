@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-from patterns import normalize
+from text_utils import normalize
 
 logger = logging.getLogger(__name__)
 

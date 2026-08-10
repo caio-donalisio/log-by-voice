@@ -25,21 +25,36 @@ _CATEGORY_MAP = {
 def _build_expense(match, text: str) -> dict:
     data: dict = {}
 
-    # Amount
-    m = re.search(
-        r"(?:R\$\s*)?(?P<amount>\d+(?:[.,]\d+)?)\s*(?:reais|real|conto|pila|pilas|R\$)?",
+    # Amount — try "X reais e Y centavos" first, then simple "X reais"
+    amount = None
+    reais_centavos = re.search(
+        r"(?P<reais>\d+)\s*reais?\s*e\s*(?P<cents>\d+)\s*centavos?",
         text,
     )
-    if m:
-        data["amount"] = float(m.group("amount").replace(",", "."))
+    if reais_centavos:
+        amount = float(reais_centavos.group("reais")) + float(reais_centavos.group("cents")) / 100
+    else:
+        m = re.search(
+            r"(?:R\$\s*)?(?P<amount>\d+(?:[.,]\d+)?)\s*(?:reais|real|conto|pila|pilas|R\$)?",
+            text,
+        )
+        if m:
+            amount = float(m.group("amount").replace(",", "."))
+    if amount is not None:
+        data["amount"] = amount
 
-    # Description — everything before the amount/price indicator
+    # Description — clean verbs and filler words, keep the product name
     desc = text
-    desc = re.sub(r"\b(?:paguei|comprei|gastei|pagar|comprar|gastar|gastou)\b", "", desc, flags=re.IGNORECASE)
-    if m:
-        desc = desc[: desc.find(m.group(0))].strip()
-    desc = re.sub(r"\s+(?:por|—|–|-)\s*$", "", desc)
-    desc = desc.strip().rstrip(".")
+    desc = re.sub(
+        r"\b(?:paguei|comprei|gastei|pagar|comprar|gastar|gastou|comprei|pagou|comprou)\b",
+        "", desc, flags=re.IGNORECASE,
+    )
+    desc = re.sub(r"\b(?:hoje|eu|um|uma|uns|umas)\b", "", desc, flags=re.IGNORECASE)
+    # Remove amount-related text
+    desc = re.sub(r"\d+\s*reais?\s*e\s*\d+\s*centavos?", "", desc)
+    desc = re.sub(r"\d+(?:[.,]\d+)?\s*(?:reais|real|conto|pila|pilas|centavos)", "", desc)
+    desc = re.sub(r"\s+(?:por|—|–|-)\s*", " ", desc)
+    desc = re.sub(r"\s+", " ", desc).strip().rstrip(".")
     if not desc:
         desc = text.strip().rstrip(".")
     data["description"] = desc
@@ -121,12 +136,19 @@ def _build_food(match, text: str) -> dict:
 
     # Description — clean the text
     desc = text
+    # Remove verbs
     desc = re.sub(
-        r"\b(?:comi|almocei|jantei|lanchei|comer|almocar|almoçar|jantar|lanchar|tomei|tomar)\b",
+        r"\b(?:comi|almocei|jantei|lanchei|comer|almocar|almoçar|jantar|lanchar|tomei|tomar|comemos|comeram)\b",
+        "", desc, flags=re.IGNORECASE,
+    )
+    # Remove filler prefix words
+    desc = re.sub(
+        r"\b(?:hoje|eu|um|uma|uns|umas)\b",
         "", desc, flags=re.IGNORECASE,
     )
     desc = re.sub(r"\d+\s*(?:calorias|cal|kcal)", "", desc)
-    desc = desc.strip().rstrip(".")
+    # Collapse whitespace
+    desc = re.sub(r"\s+", " ", desc).strip().rstrip(".")
     if not desc:
         desc = text.strip().rstrip(".")
     data["description"] = desc

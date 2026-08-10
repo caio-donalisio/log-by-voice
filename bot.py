@@ -69,6 +69,23 @@ claude_lock = asyncio.Lock()
 PROMPT_TEMPLATE_PATH = BASE_DIR / "prompt_template.txt"
 
 
+def _source_env_file(path: Path, target_env: dict[str, str]) -> None:
+    """Parse a shell-style env file (export KEY=VALUE) into *target_env*."""
+    import re
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Strip "export " prefix
+        line = re.sub(r"^export\s+", "", line)
+        if "=" in line:
+            key, _, value = line.partition("=")
+            value = value.strip().strip("'").strip('"')
+            target_env[key.strip()] = value
+
+
 def transcribe_audio(path: Path) -> str:
     segments, _info = whisper_model.transcribe(str(path), language=WHISPER_LANGUAGE)
     return " ".join(segment.text.strip() for segment in segments).strip()
@@ -78,6 +95,11 @@ def run_claude_cli(prompt: str) -> tuple[bool, str]:
     env = os.environ.copy()
     if CLAUDE_CONFIG_DIR:
         env["CLAUDE_CONFIG_DIR"] = CLAUDE_CONFIG_DIR
+
+    # Load DeepSeek env vars if available
+    _deepseek_env = Path(os.environ.get("DEEPSEEK_ENV_FILE", Path.home() / "deepseek.sh"))
+    if _deepseek_env.exists():
+        _source_env_file(_deepseek_env, env)
 
     try:
         result = subprocess.run(
