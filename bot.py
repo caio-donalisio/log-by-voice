@@ -311,7 +311,32 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 OBSIDIAN_VAULT_DIR, date_str, time_str
             )
 
-            # Phase 3 — Format + write each item
+            # Phase 3 — Calorie estimation for food items without explicit numbers
+            _needs_calories = [
+                (i, item.data.description)
+                for i, item in enumerate(items)
+                if (
+                    item.type == "habit_log"
+                    and item.habit == "food"
+                    and item.data.estimated
+                    and item.data.calories is None
+                )
+            ]
+            if _needs_calories:
+                from calorie_estimator import estimate_calories
+                cal_map = await loop.run_in_executor(
+                    None, estimate_calories, _needs_calories, run_claude_cli
+                )
+                for i, cals in cal_map.items():
+                    items[i].data.calories = cals
+                    items[i].data.estimated = True
+                if cal_map:
+                    logger.info(
+                        "Calorias estimadas para %d/%d itens de comida",
+                        len(cal_map), len(_needs_calories),
+                    )
+
+            # Phase 4 — Format + write each item
             warnings: list[str] = []
             for item in items:
                 _dispatch_item(

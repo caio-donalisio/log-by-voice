@@ -1,7 +1,4 @@
-"""T15 — Deterministic RESUMO generator.
-
-Produces the ``RESUMO: ...`` line that the bot sends back to Telegram.
-"""
+"""T15 — Deterministic, descriptive RESUMO generator."""
 
 from __future__ import annotations
 
@@ -13,81 +10,103 @@ def generate_resumo(
     warnings: list[str],
     daily_note_created: bool = False,
 ) -> str:
-    """Generate a deterministic Portuguese summary of what was written.
+    """Generate a descriptive Portuguese summary of what was written and where.
 
-    Returns the full ``RESUMO: ...`` line (without newline).
+    Returns the full ``RESUMO: ...`` line.
     """
     if not items and not warnings:
         return "RESUMO: Nenhum item processado."
 
     parts: list[str] = []
 
-    # Count by category
-    task_count = sum(1 for i in items if i.type == "task")
-    habit_count = sum(1 for i in items if i.type == "habit_log")
-    comment_count = sum(1 for i in items if i.type == "comment")
-    edit_count = sum(
-        1 for i in items
-        if i.type in ("mark_done", "correction", "complement")
-    )
-    recurring_count = sum(1 for i in items if i.type == "recurring_task")
-
-    # Build summary
-    added: list[str] = []
-    if task_count:
-        added.append(_plural(task_count, "tarefa"))
-    if habit_count:
-        added.append(_plural(habit_count, "registro"))
-    if comment_count:
-        added.append(_plural(comment_count, "anotação"))
-
-    if added:
-        parts.append(f"{_join(added)} adicionad{_a_o(added)}")
-
-    if edit_count:
-        parts.append(f"{_plural(edit_count, 'item')} atualizado{_a_o([str(edit_count)])}")
-
-    if recurring_count:
-        parts.append(f"{_plural(recurring_count, 'tarefa recorrente')} criada")
+    for item in items:
+        desc = _describe_item(item)
+        if desc:
+            parts.append(desc)
 
     if daily_note_created:
         parts.append("nota diária criada")
 
-    # Warnings
     if warnings:
         for w in warnings:
             parts.append(f"⚠️ {w}")
 
-    summary = ", ".join(parts) if parts else "Nenhum item processado"
+    if not parts:
+        return "RESUMO: Nenhum item processado."
 
-    # Determine the actual items count for summary
-    return f"RESUMO: {summary}."
-
-
-# ---------------------------------------------------------------------------
-# Portuguese helpers
-# ---------------------------------------------------------------------------
-
-def _plural(n: int, word: str) -> str:
-    if n == 1:
-        return f"1 {word}"
-    # Simple plural — works for regular words
-    if word.endswith("r"):
-        return f"{n} {word}es"
-    if word.endswith("ão"):
-        return f"{n} {word[:-2]}ões"
-    return f"{n} {word}s"
+    return "RESUMO: " + "; ".join(parts) + "."
 
 
-def _join(lst: list[str]) -> str:
-    if len(lst) == 1:
-        return lst[0]
-    if len(lst) == 2:
-        return f"{lst[0]} e {lst[1]}"
-    return ", ".join(lst[:-1]) + f" e {lst[-1]}"
+def _describe_item(item: Item) -> str:
+    """Describe a single item in Portuguese, saying what and where."""
+    d = item.data
+    t = item.type
+    h = item.habit
+
+    # --- habit_log ---
+    if t == "habit_log" and h == "weight":
+        return f"Peso {d.weight_kg}kg registrado em 📓 Anotações"
+
+    if t == "habit_log" and h == "cardio":
+        mins = f" ({d.minutes}min)" if getattr(d, 'minutes', None) else ""
+        return f"{_cap(getattr(d, 'activity', 'Cardio'))}{mins} registrado em 📓 Anotações"
+
+    if t == "habit_log" and h == "food":
+        desc = getattr(d, 'description', 'refeição')
+        cals = f" ({d.calories} kcal)" if getattr(d, 'calories', None) else ""
+        return f"Comi {desc}{cals} → 📓 Anotações"
+
+    if t == "habit_log" and h == "expense":
+        desc = getattr(d, 'description', 'gasto')
+        amt = f" R${d.amount:.2f}" if getattr(d, 'amount', None) else ""
+        return f"Paguei {desc}{amt} → 📓 Anotações"
+
+    if t == "habit_log" and h == "piano":
+        piece = getattr(d, 'piece_hint', 'peça')
+        mins = f" ({d.minutes}min)" if getattr(d, 'minutes', None) else ""
+        return f"Piano: {piece}{mins} → 📓 Anotações"
+
+    if t == "habit_log" and h == "lifting":
+        ex = getattr(d, 'exercise_hint', 'exercício')
+        sets = f" {d.sets}x" if getattr(d, 'sets', None) else ""
+        reps = str(d.reps) if getattr(d, 'reps', None) else ""
+        wgt = f" @{d.weight_kg}kg" if getattr(d, 'weight_kg', None) else ""
+        return f"Musculação: {ex}{sets}{reps}{wgt} → 📓 Anotações"
+
+    # --- task ---
+    if t == "task":
+        desc = getattr(d, 'description', 'tarefa')
+        due = f" 📅 {d.due_date}" if getattr(d, 'due_date', None) else ""
+        return f"Tarefa \"{desc}\"{due} → ✅ Tarefas Registradas"
+
+    # --- comment ---
+    if t == "comment":
+        text = getattr(d, 'text', 'anotação')
+        short = text[:80] + ("..." if len(text) > 80 else "")
+        return f"Anotação \"{short}\" → 📓 Anotações"
+
+    # --- mark_done ---
+    if t == "mark_done":
+        hint = getattr(d, 'task_hint', 'tarefa')
+        return f"Tarefa \"{hint}\" marcada como concluída ✅"
+
+    # --- correction ---
+    if t == "correction":
+        hint = getattr(d, 'search_hint', 'item')
+        return f"Correção em \"{hint}\" aplicada"
+
+    # --- complement ---
+    if t == "complement":
+        hint = getattr(d, 'search_hint', 'item')
+        return f"Detalhe adicionado em \"{hint}\""
+
+    # --- recurring_task ---
+    if t == "recurring_task":
+        desc = getattr(d, 'description', 'tarefa')
+        return f"Tarefa recorrente \"{desc}\" → Tarefas Recorrentes"
+
+    return ""
 
 
-def _a_o(lst: list[str]) -> str:
-    """Feminine/plural ending for adjectives."""
-    # Simplification: if all are feminine plural, use "as"; else "os"
-    return "os"
+def _cap(s: str) -> str:
+    return s[0].upper() + s[1:] if s else ""

@@ -263,22 +263,21 @@ def _insert_after_section(
         content_lines.append(f"\n{heading}\n")
         heading_idx = len(content_lines) - 2  # the heading we just added
 
-    # Find the end of this section (next heading or EOF)
+    # Find the end of this section: next heading, --- separator, or EOF
     insert_idx = len(content_lines)
     for i in range(heading_idx + 1, len(content_lines)):
         stripped = content_lines[i].strip()
-        if stripped.startswith("#"):
+        if stripped.startswith("#") or stripped == "---":
             insert_idx = i
             break
 
-    # Walk backwards from insert_idx to find the last non-empty, non-heading
-    # content line — we'll insert after it.  But for bullet lists we want to
-    # append right before the blank-line-then-next-heading gap.
-    #
-    # Strategy: insert before the first blank line that precedes a heading or
-    # EOF, right after the last content bullet.
+    # Walk backwards from insert_idx: find the last actual content line
+    # (a bullet starting with "- " or a non-empty, non-blank line)
     insert_point = insert_idx
-    while insert_point > heading_idx + 1 and content_lines[insert_point - 1].strip() == "":
+    while insert_point > heading_idx + 1:
+        prev = content_lines[insert_point - 1].strip()
+        if prev and prev != "---":
+            break
         insert_point -= 1
 
     # Build the insertion: each new line + newline
@@ -286,6 +285,10 @@ def _insert_after_section(
         f"{line}\n" if not line.endswith("\n") else line
         for line in new_lines
     )
+
+    # Add blank line before insertion if needed
+    if insert_point > 0 and content_lines[insert_point - 1].strip() != "":
+        insertion = "\n" + insertion
 
     content_lines.insert(insert_point, insertion)
     return "".join(content_lines)
