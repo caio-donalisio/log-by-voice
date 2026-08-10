@@ -49,6 +49,8 @@ class Pattern:
     confidence: float
     build_item: Callable[[re.Match, str], dict[str, Any]]
     required_fields: list[str] = field(default_factory=list)
+    # Optional — called with the built item dict; returns adjusted confidence
+    adjust_confidence: Callable[[dict[str, Any], float], float] | None = None
 
     # Compiled at registration time by the registry
     _trigger_res: list[re.Pattern] = field(default_factory=list, repr=False)
