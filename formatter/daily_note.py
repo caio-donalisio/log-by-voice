@@ -33,6 +33,9 @@ _MONTHS: dict[int, str] = {
     9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro",
 }
 
+# Validate date_str is strictly YYYY-MM-DD (path traversal guard)
+_DATE_STR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 _VALID_SECTIONS: set[str] = {
     "### ✅ Tarefas Registradas",
     "### 📓 Anotações",
@@ -53,6 +56,12 @@ def ensure_daily_note(
     If the note doesn't exist, it is created from the vault's daily template
     with all Templater placeholders resolved for *date_str*.
     """
+    # Validate date_str format to prevent path traversal
+    if not _DATE_STR_RE.match(date_str):
+        raise ValueError(
+            f"date_str must be YYYY-MM-DD, got: {date_str!r}"
+        )
+
     note_path = vault_dir / "10 Daily" / f"{date_str}.md"
     if note_path.exists():
         return note_path, False
