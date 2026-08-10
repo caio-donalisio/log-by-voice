@@ -25,19 +25,15 @@ def format_task(data: TaskData) -> str:
     if data.due_date:
         parts.append(f"📅 {data.due_date}")
 
+    if data.time:
+        parts.append(f"[time:: {data.time}]")
+
     line = " ".join(parts)
 
-    # Sub-bullets
+    # Sub-bullet for comment only (time is now inline)
     sub = []
-    if data.time:
-        sub.append(f"    - Às {data.time}")
     if data.comment:
-        # If both time and comment, combine into one sub-bullet when appropriate
-        if data.time and data.comment:
-            # Check if they should be combined (comment is short)
-            sub = [f"    - Às {data.time}, {data.comment}"]
-        else:
-            sub.append(f"    - {data.comment}")
+        sub.append(f"    - {data.comment}")
 
     if sub:
         return line + "\n" + "\n".join(sub)

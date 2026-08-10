@@ -22,6 +22,9 @@ _ALLOWED_DIRS = [
     "20 Pessoal/Aniversários",
 ]
 
+# Files excluded from search (templates, readmes)
+_SKIP_FILES = {"_README.md", "Tarefas Recorrentes.md"}
+
 # Search scopes
 _RECENT_DAYS = 30
 
@@ -156,6 +159,9 @@ def _find_match(
             continue
 
         for md_file in sorted(search_root.rglob("*.md"), reverse=True):
+            # Skip template/readme files
+            if md_file.name in _SKIP_FILES:
+                continue
             # Skip files outside the allowed directory
             try:
                 md_file.relative_to(search_root)
@@ -178,11 +184,21 @@ def _find_match(
     candidates.sort(key=lambda m: m.score, reverse=True)
     best = candidates[0]
 
-    # Ambiguity check
+    # Ambiguity check: if top 2 scores are too close and point to DIFFERENT
+    # files/lines, reject.  If they point to identical content (same line
+    # across multiple days — common for habits), prefer the most recent file
+    # (already first in sorted order since we sort reverse=True).
     if len(candidates) >= 2:
         second_score = candidates[1].score
         gap = best.score - second_score
-        if gap < 20:
+        # If scores are identical (gap=0) and the line "core" matches
+        # (same habit, ignoring varying numbers), it's the same habit
+        # repeated across days — take the most recent file.
+        same_text = (
+            _core_text(best.line_text) == _core_text(candidates[1].line_text)
+            if gap == 0 else False
+        )
+        if gap < 20 and not same_text:
             logger.debug(
                 "Ambiguous match: '%s' (score=%d) vs '%s' (score=%d)",
                 best.line_text[:60], best.score,
@@ -190,15 +206,20 @@ def _find_match(
             )
             return None
 
-    # Must be clear: score ≥ 80, or score ≥ 60 with gap ≥ 20
-    if best.score < 80:
-        if len(candidates) >= 2:
-            return None  # Already checked gap
-        # Single candidate with moderate score
-        if best.score < 60:
-            return None
+    # Must be clear: score ≥ 80, or score ≥ 60 with adequate uniqueness
+    if best.score < 60:
+        return None
 
     return best
+
+
+def _core_text(text: str) -> str:
+    """Normalize and strip numbers for comparing habit lines across days."""
+    import re
+    t = normalize(text)
+    t = re.sub(r"\d+(?:[.,]\d+)?", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
 
 
 def _score_line(hint: str, norm_line: str) -> float:
