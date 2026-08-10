@@ -11,11 +11,14 @@ from formatter.schema import CommentData, TaskData
 _PRIORITY_MAP = {"urgente": "🔺", "alta": "⏫", "média": "🔼"}
 
 
-def format_task(data: TaskData) -> str:
+def format_task(data: TaskData, time_str: str = "") -> str:
     """Format a task as an Obsidian Tasks plugin checkbox line.
 
-    Returns: ``- [ ] <description> [🔺|⏫|🔼] 📅 YYYY-MM-DD``
-    with optional sub-bullets for time and comment.
+    *time_str* is the recording time (when the audio was sent).
+    *data.time* is the deadline mentioned in the audio, if any.
+
+    Returns: ``- [ ] <description> [🔺|⏫|🔼] [time:: HH:MM] 📅 YYYY-MM-DD``
+    with optional sub-bullet for deadline and comment.
     """
     parts = ["- [ ]", data.description]
 
@@ -25,13 +28,15 @@ def format_task(data: TaskData) -> str:
     if data.due_date:
         parts.append(f"📅 {data.due_date}")
 
-    if data.time:
-        parts.append(f"[time:: {data.time}]")
+    if time_str:
+        parts.append(f"[time:: {time_str}]")
 
     line = " ".join(parts)
 
-    # Sub-bullet for comment only (time is now inline)
+    # Sub-bullet for deadline time (from audio) and comment
     sub = []
+    if data.time:
+        sub.append(f"    - Às {data.time}")
     if data.comment:
         sub.append(f"    - {data.comment}")
 

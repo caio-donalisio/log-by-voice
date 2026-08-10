@@ -12,24 +12,25 @@ from formatter.schema import (
 # Weight
 # ---------------------------------------------------------------------------
 
-def format_weight(data: WeightData) -> str:
-    return (
-        f"- Me pesei [weight:: {_fmt_num(data.weight_kg)}] "
-        f"#log/fitness #fitness/weight"
-    )
+def format_weight(data: WeightData, time_str: str = "") -> str:
+    line = f"- Me pesei [weight:: {_fmt_num(data.weight_kg)}]"
+    if time_str:
+        line += f" [time:: {time_str}]"
+    line += " #log/fitness #fitness/weight"
+    return line
 
 
 # ---------------------------------------------------------------------------
 # Cardio
 # ---------------------------------------------------------------------------
 
-def format_cardio(data: CardioData, date_str: str) -> str:
+def format_cardio(data: CardioData, date_str: str, time_str: str = "") -> str:
     activity = data.activity or "Cardio"
-    line = (
-        f"- [x] Fazer {activity.capitalize()}"
-    )
+    line = f"- [x] Fazer {activity.capitalize()}"
     if data.minutes:
         line += f" [minutes:: {data.minutes}]"
+    if time_str:
+        line += f" [time:: {time_str}]"
     line += f" #habit #fitness #fitness/cardio #log/fitness 📅 {date_str} ✅ {date_str}"
     return line
 
@@ -38,7 +39,7 @@ def format_cardio(data: CardioData, date_str: str) -> str:
 # Food
 # ---------------------------------------------------------------------------
 
-def format_food(data: FoodData) -> str:
+def format_food(data: FoodData, time_str: str = "") -> str:
     desc = data.description
     if data.estimated and data.calories:
         desc += " (estimativa)"
@@ -48,6 +49,8 @@ def format_food(data: FoodData) -> str:
         line += f" [calories:: {data.calories}]"
     if data.meal:
         line += f" [meal:: {data.meal}]"
+    if time_str:
+        line += f" [time:: {time_str}]"
     line += " #log/fitness #fitness/calories"
     return line
 
@@ -56,12 +59,14 @@ def format_food(data: FoodData) -> str:
 # Expense
 # ---------------------------------------------------------------------------
 
-def format_expense(data: ExpenseData) -> str:
+def format_expense(data: ExpenseData, time_str: str = "") -> str:
     line = f"- Paguei {data.description}"
     if data.amount is not None:
         line += f" [amount:: {_fmt_num(data.amount)}]"
     if data.category:
         line += f" [category:: {data.category}]"
+    if time_str:
+        line += f" [time:: {time_str}]"
     line += " #log/finance #finance/expense"
     return line
 
@@ -70,7 +75,7 @@ def format_expense(data: ExpenseData) -> str:
 # Piano
 # ---------------------------------------------------------------------------
 
-def format_piano(data: PianoData, resolved_piece: str | None = None) -> str:
+def format_piano(data: PianoData, resolved_piece: str | None = None, time_str: str = "") -> str:
     """Format piano log.  *resolved_piece* comes from wiki-link resolution."""
     piece = resolved_piece or data.piece_hint
 
@@ -83,6 +88,8 @@ def format_piano(data: PianoData, resolved_piece: str | None = None) -> str:
     line = f"- {verb} [[{piece}]]"
     if data.minutes:
         line += f" [minutes:: {data.minutes}]"
+    if time_str:
+        line += f" [time:: {time_str}]"
 
     tag = "#piano/repertoire"
     if data.action == "study":
@@ -96,7 +103,7 @@ def format_piano(data: PianoData, resolved_piece: str | None = None) -> str:
 # Lifting
 # ---------------------------------------------------------------------------
 
-def format_lifting(data: LiftingData, resolved_exercise: str | None = None) -> str:
+def format_lifting(data: LiftingData, resolved_exercise: str | None = None, time_str: str = "") -> str:
     """Format lifting log.  *resolved_exercise* from wiki-link resolution."""
     exercise = resolved_exercise or data.exercise_hint
 
@@ -107,6 +114,8 @@ def format_lifting(data: LiftingData, resolved_exercise: str | None = None) -> s
         line += f" [reps:: {data.reps}]"
     if data.sets is not None:
         line += f" [sets:: {data.sets}]"
+    if time_str:
+        line += f" [time:: {time_str}]"
     line += " #log/fitness #fitness/lifting"
     return line
 

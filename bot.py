@@ -183,22 +183,22 @@ def _dispatch_item(
     data = item.data
 
     if item_type == "task":
-        line = format_task(data)
+        line = format_task(data, time_str)
         append_to_section(daily_note_path, "### ✅ Tarefas Registradas", [line])
 
     elif item_type == "habit_log":
         habit = item.habit
         if habit == "weight":
-            line = format_weight(data)
+            line = format_weight(data, time_str)
         elif habit == "cardio":
-            line = format_cardio(data, date_str)
+            line = format_cardio(data, date_str, time_str)
         elif habit == "food":
-            line = format_food(data)
+            line = format_food(data, time_str)
         elif habit == "expense":
-            line = format_expense(data)
+            line = format_expense(data, time_str)
         elif habit == "piano":
             piece, score = resolve_piece(data.piece_hint, vault_dir)
-            line = format_piano(data, piece)
+            line = format_piano(data, piece, time_str)
             if score < 1.0:
                 warnings_out.append(
                     f"Não encontrei nota existente para '{data.piece_hint}', "
@@ -206,7 +206,7 @@ def _dispatch_item(
                 )
         elif habit == "lifting":
             exercise, score = resolve_exercise(data.exercise_hint, vault_dir)
-            line = format_lifting(data, exercise)
+            line = format_lifting(data, exercise, time_str)
             if score < 1.0 and score > 0.0:
                 warnings_out.append(
                     f"Não encontrei nota existente para "
