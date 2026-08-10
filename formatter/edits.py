@@ -15,8 +15,12 @@ from text_utils import normalize
 
 logger = logging.getLogger(__name__)
 
-# Restrict edits to this directory
-_ALLOWED_DIR = "10 Daily"
+# Restrict edits to these directories (relative to vault root).
+# Edits outside these paths fall back to comment.
+_ALLOWED_DIRS = [
+    "10 Daily",
+    "20 Pessoal/Aniversários",
+]
 
 # Search scopes
 _RECENT_DAYS = 30
@@ -139,35 +143,34 @@ def _find_match(
     vault_dir: Path,
     scope: str = "today",
 ) -> Match | None:
-    """Search ``10 Daily/**`` for a line matching *hint*."""
-    daily_dir = vault_dir / _ALLOWED_DIR
-    if not daily_dir.is_dir():
-        return None
-
+    """Search allowed directories for a line matching *hint*."""
     norm_hint = normalize(hint)
     if not norm_hint:
         return None
 
-    # Files to search, in order
-    today_file = daily_dir / f"{_current_date_str()}.md"  # placeholder; caller provides date
-    # Actually, search all daily notes. Simpler approach:
     candidates: list[Match] = []
 
-    for md_file in sorted(daily_dir.rglob("*.md"), reverse=True):
-        # Enforce scope
-        if scope == "today":
-            # We need to know which file is "today" — skip for now, match against all
-            pass
-
-        try:
-            content = md_file.read_text(encoding="utf-8")
-        except Exception:
+    for allowed_rel in _ALLOWED_DIRS:
+        search_root = vault_dir / allowed_rel
+        if not search_root.is_dir():
             continue
 
-        for i, line in enumerate(content.splitlines(), start=1):
-            score = _score_line(hint, normalize(line))
-            if score >= 60:
-                candidates.append(Match(md_file, i, line, score))
+        for md_file in sorted(search_root.rglob("*.md"), reverse=True):
+            # Skip files outside the allowed directory
+            try:
+                md_file.relative_to(search_root)
+            except ValueError:
+                continue
+
+            try:
+                content = md_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+            for i, line in enumerate(content.splitlines(), start=1):
+                score = _score_line(hint, normalize(line))
+                if score >= 60:
+                    candidates.append(Match(md_file, i, line, score))
 
     if not candidates:
         return None
