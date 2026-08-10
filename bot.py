@@ -50,14 +50,32 @@ AUDIO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("telegram_audio_bot")
 logger.setLevel(logging.INFO)
-_console_handler = logging.StreamHandler()
-_file_handler = RotatingFileHandler(
-    BASE_DIR / "bot.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
-)
-_formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-for _h in (_console_handler, _file_handler):
-    _h.setFormatter(_formatter)
-    logger.addHandler(_h)
+
+# Avoid duplicate handlers on hot-reload
+if not logger.handlers:
+    _console_handler = logging.StreamHandler()
+    _file_handler = RotatingFileHandler(
+        BASE_DIR / "bot.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
+    )
+    _formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+    for _h in (_console_handler, _file_handler):
+        _h.setFormatter(_formatter)
+        logger.addHandler(_h)
+
+# Ensure submodule logs are visible: configure each and set propagation
+_pkg_loggers = ["patterns", "classifier", "calorie_estimator", "formatter"]
+for _name in _pkg_loggers:
+    _pkg = logging.getLogger(_name)
+    _pkg.setLevel(logging.INFO)
+    _pkg.propagate = True
+
+# Add our handlers to root so propagated messages are captured
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+if _console_handler not in _root.handlers:
+    _root.addHandler(_console_handler)
+if _file_handler not in _root.handlers:
+    _root.addHandler(_file_handler)
 
 whisper_model = WhisperModel(
     WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE
@@ -397,9 +415,18 @@ def build_application() -> Application:
 
 
 def main() -> None:
+    # PID file — prevent double instances
+    _pid_file = BASE_DIR / ".bot.pid"
+    _pid_file.write_text(str(os.getpid()))
+
     logger.info(
         "Iniciando bot (modelo Whisper=%s, vault=%s)", WHISPER_MODEL_SIZE, OBSIDIAN_VAULT_DIR
     )
+    if not OBSIDIAN_VAULT_DIR.is_dir():
+        logger.error(
+            "VAULT INACESSÍVEL: %s — o bot vai iniciar mas falhará ao processar áudios.",
+            OBSIDIAN_VAULT_DIR,
+        )
     backoff_seconds = 5
     while True:
         try:

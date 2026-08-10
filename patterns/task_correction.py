@@ -31,22 +31,17 @@ def _build_task(match, text: str) -> dict:
     elif re.search(r"\bm[ée]dia\b\s+prioridade", text, re.IGNORECASE):
         data["priority"] = "média"
 
-    # Due date — relative date words
-    today_dates = {
-        "hoje": 0, "amanhã": 1, "amanha": 1,
-        "depois de amanhã": 2, "depois de amanha": 2,
-    }
-    for word, offset in today_dates.items():
-        if word in text.lower():
-            # We don't have date context here — just mark the word as hint
-            # The caller (Python formatter) resolves relative dates
-            data["due_hint"] = word
-            break
+    # Due date — use relative date parser
+    from date_utils import parse_relative_date
+    parsed_date = parse_relative_date(text)
+    if parsed_date:
+        data["due_date"] = parsed_date
 
-    # Explicit date pattern: "dia N" or "dia NN"
-    m = re.search(r"\bdia\s+(\d{1,2})\b", text)
-    if m:
-        data["due_day"] = int(m.group(1))
+    # Explicit date pattern: "dia N" or "dia NN" (fallback if parser missed)
+    if not parsed_date:
+        m = re.search(r"\bdia\s+(\d{1,2})\b", text)
+        if m:
+            data["due_day"] = int(m.group(1))
 
     # Time: "às HH:MM" or "às HHh"
     m = re.search(r"(?:[àa]s?)\s*(?P<hour>\d{1,2})\s*[h:]\s*(?P<min>\d{2})?", text)
@@ -65,12 +60,22 @@ def _build_task(match, text: str) -> dict:
     return {"type": "task", "data": data}
 
 
+def _adjust_task_confidence(item: dict, base: float) -> float:
+    """Boost confidence when the task has a deadline, date, or time hint."""
+    data = item.get("data", {})
+    # If there's a due date, time, or priority → strong signal
+    if data.get("due_date") or data.get("due_day") or data.get("time") or data.get("priority"):
+        return min(base * 1.15, 0.95)
+    return base
+
+
 task_pattern = Pattern(
     name="task",
     category="task",
     habit=None,
     triggers=[
-        r"\bregistr[ae]\b",  # registra/registre (com ou sem "tarefa" depois)
+        # Explicit task commands (high signal)
+        r"\bregistr[ae]\b",
         r"\bcri[ae]\s+(?:uma\s+)?tarefa\b",
         r"\banot[ae]\s+(?:uma\s+)?tarefa\b",
         r"\btenho\s+que\b",
@@ -78,10 +83,14 @@ task_pattern = Pattern(
         r"\bn[ãa]o\s+esquecer\b",
         r"\blembrete\s*:",
         r"\blembrar\s+de\b",
+        # Infinitive verbs — uniquely task-oriented (excludes verbs covered
+        # by other patterns: comprar/pagar→expense, fazer→lifting/cardio, etc.)
+        r"\b(?:organizar|resolver|marcar|agendar|enviar|mandar|estudar|limpar|arrumar|consertar|entregar|ligar|providenciar|agilizar|confirmar|verificar|checar|conferir)\b",
     ],
     regex=r".*",
-    confidence=0.85,
+    confidence=0.80,  # Lower base — infinitive verbs aren't always tasks
     build_item=_build_task,
+    adjust_confidence=_adjust_task_confidence,
     required_fields=["description"],
 )
 

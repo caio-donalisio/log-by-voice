@@ -9,42 +9,51 @@ PID_FILE="$BOT_DIR/.bot.pid"
 
 echo "=== Telegram Audio Bot Restart ==="
 
-# Kill existing process if running
+# Kill existing process via PID file
 if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
     if kill -0 "$OLD_PID" 2>/dev/null; then
         echo "Stopping bot (PID $OLD_PID)..."
         kill "$OLD_PID"
         sleep 2
-        # Force kill if still alive
         if kill -0 "$OLD_PID" 2>/dev/null; then
             echo "Force killing..."
             kill -9 "$OLD_PID" 2>/dev/null || true
         fi
         echo "Stopped."
     else
-        echo "Stale PID file (process $OLD_PID not running), cleaning up."
+        echo "Stale PID file (process $OLD_PID gone), cleaning up."
     fi
     rm -f "$PID_FILE"
-else
-    # Fallback: kill any existing bot processes
-    PIDS=$(pgrep -f "bot.py" 2>/dev/null || true)
-    if [ -n "$PIDS" ]; then
-        echo "Found running bot processes, stopping: $PIDS"
-        echo "$PIDS" | xargs kill 2>/dev/null || true
-        sleep 2
-    fi
 fi
+
+# Kill any remaining bot processes (safety net)
+for pid in $(pgrep -f "bot.py" 2>/dev/null || true); do
+    echo "Killing leftover bot process $pid..."
+    kill "$pid" 2>/dev/null || true
+done
+sleep 1
+# Force kill any survivors
+for pid in $(pgrep -f "bot.py" 2>/dev/null || true); do
+    kill -9 "$pid" 2>/dev/null || true
+done
 
 # Pull latest code
 cd "$BOT_DIR"
 echo "Pulling latest code..."
 git pull
 
+# Check vault accessibility
+VAULT_DIR=$(grep OBSIDIAN_VAULT_DIR .env | cut -d= -f2)
+if [ -n "$VAULT_DIR" ] && [ ! -d "$VAULT_DIR" ]; then
+    echo "WARNING: Vault directory not accessible: $VAULT_DIR"
+    echo "Bot will start but may fail on first audio."
+fi
+
 # Start bot
 echo "Starting bot..."
 cd "$BOT_DIR"
-nohup uv run bot.py > /dev/null 2>&1 &
+nohup uv run bot.py >> bot.log 2>&1 &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 echo "Bot started (PID $NEW_PID)."
