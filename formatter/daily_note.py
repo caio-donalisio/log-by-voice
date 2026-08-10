@@ -286,10 +286,6 @@ def _insert_after_section(
         for line in new_lines
     )
 
-    # Add blank line before insertion if needed
-    if insert_point > 0 and content_lines[insert_point - 1].strip() != "":
-        insertion = "\n" + insertion
-
     content_lines.insert(insert_point, insertion)
     return "".join(content_lines)
 
