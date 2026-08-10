@@ -380,17 +380,21 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             ]
             if _needs_calories:
                 from calorie_estimator import estimate_calories
-                cal_map = await loop.run_in_executor(
-                    None, estimate_calories, _needs_calories, run_claude_cli
-                )
-                for i, cals in cal_map.items():
-                    items[i].data.calories = cals
-                    items[i].data.estimated = True
-                if cal_map:
-                    logger.info(
-                        "Calorias estimadas para %d/%d itens de comida",
-                        len(cal_map), len(_needs_calories),
+                try:
+                    cal_map = await loop.run_in_executor(
+                        None, estimate_calories, _needs_calories, run_claude_cli
                     )
+                    for i, cals in cal_map.items():
+                        items[i].data.calories = cals
+                        items[i].data.estimated = True
+                    if cal_map:
+                        logger.info(
+                            "Calorias estimadas para %d/%d itens de comida",
+                            len(cal_map), len(_needs_calories),
+                        )
+                except Exception:
+                    logger.exception("Falha ao estimar calorias — seguindo sem estimativa")
+                    # Don't crash the pipeline — just skip calorie estimation
 
             # Phase 4 — Format + write each item
             warnings: list[str] = []
@@ -446,6 +450,26 @@ def main() -> None:
     _recover_orphans()
 
 
+def _notify_crash(delay: int) -> None:
+    """Send a Telegram message to the owner notifying of a crash."""
+    try:
+        import httpx
+        url = (
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+            f"/sendMessage"
+        )
+        payload = {
+            "chat_id": ALLOWED_TELEGRAM_USER_ID,
+            "text": (
+                f"⚠️ O bot crashou e está reiniciando em {delay}s.\n"
+                f"Verifique o log para detalhes."
+            ),
+        }
+        httpx.post(url, json=payload, timeout=10)
+    except Exception:
+        logger.exception("Não foi possível enviar notificação de crash")
+
+
 def _recover_orphans() -> None:
     """Delete .ogg files that have no matching .txt (crashed before transcription).
 
@@ -475,6 +499,8 @@ def _recover_orphans() -> None:
             logger.exception(
                 "Bot caiu de forma inesperada, reiniciando em %ss", backoff_seconds
             )
+            # Notify user on Telegram
+            _notify_crash(backoff_seconds)
             time.sleep(backoff_seconds)
             backoff_seconds = min(backoff_seconds * 2, 300)
 
