@@ -12,7 +12,7 @@ _CALORIE_PROMPT = """\
 Estime as calorias de cada refeição abaixo. Retorne APENAS um objeto JSON
 mapeando o índice do item para o número estimado de calorias (inteiro).
 
-Exemplo: {"0": 550, "1": 120}
+Exemplo: {{"0": 550, "1": 120}}
 
 Itens:
 {items}
