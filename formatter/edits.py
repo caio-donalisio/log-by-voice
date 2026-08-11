@@ -46,43 +46,35 @@ def find_and_mark_done(
     vault_dir: Path,
     is_recurring: bool = False,
     comment: str | None = None,
-) -> tuple[str | None, list[str]]:  # (edited_file_path_or_None, warnings)
-    """Mark a task as done.
-
-    Returns ``(file_path, warnings)``.  *file_path* is the path to the file
-    that was modified, or ``None`` if no match was found (fallback to comment).
-    """
+) -> tuple[str | None, list[str], str, str]:  # (path, warnings, old_line, new_line)
+    """Mark a task as done."""
     match = _find_match(task_hint, vault_dir)
     if match is None:
         return None, [
             f"Não encontrei a tarefa '{task_hint}' para marcar como concluída."
-        ]
+        ], "", ""
 
     lines = _read(match.path)
     old_line = lines[match.line_number - 1]
 
-    # Replace [ ] with [x]
     new_line = re.sub(r"-\s*\[ \]", "- [x]", old_line, count=1)
-    # Append ✅ date if not already present
     done_marker = f"✅ {date_str}"
     if done_marker not in new_line:
         new_line = new_line.rstrip("\n") + f" {done_marker}\n"
 
     lines[match.line_number - 1] = new_line
 
-    # If recurring, create next occurrence
     if is_recurring and "🔁" in old_line:
         next_line = _create_next_occurrence(old_line, date_str)
         if next_line:
             lines.insert(match.line_number, next_line + "\n")
 
-    # Add comment sub-bullet if provided
     if comment:
         lines.insert(match.line_number + (2 if is_recurring else 1),
                      f"    - {comment}\n")
 
     _write(match.path, lines)
-    return str(match.path), []
+    return str(match.path), [], old_line.strip(), new_line.strip()
 
 
 def find_and_correct(
@@ -91,50 +83,43 @@ def find_and_correct(
     new_value: str,
     vault_dir: Path,
     search_scope: str = "today",
-) -> tuple[str | None, list[str]]:
-    """Correct a previously logged value.
-
-    Edits the matching line in-place, replacing only the targeted field.
-    """
+) -> tuple[str | None, list[str], str, str]:  # (path, warnings, old_line, new_line)
+    """Correct a previously logged value."""
     match = _find_match(search_hint, vault_dir, search_scope)
     if match is None:
         return None, [
             f"Não encontrei a anotação '{search_hint}' para corrigir."
-        ]
+        ], "", ""
 
     lines = _read(match.path)
     old_line = lines[match.line_number - 1]
 
-    # Replace [field:: old_value] with [field:: new_value]
-    field_pattern = re.compile(
-        rf"\[{re.escape(new_field)}::\s*([^\]]*)\]"
-    )
-    new_line = field_pattern.sub(
-        f"[{new_field}:: {new_value}]", old_line
-    )
+    field_pattern = re.compile(rf"\[{re.escape(new_field)}::\s*([^\]]*)\]")
+    new_line = field_pattern.sub(f"[{new_field}:: {new_value}]", old_line)
     lines[match.line_number - 1] = new_line
 
     _write(match.path, lines)
-    return str(match.path), []
+    return str(match.path), [], old_line.strip(), new_line.strip()
 
 
 def find_and_complement(
     search_hint: str,
     detail: str,
     vault_dir: Path,
-) -> tuple[str | None, list[str]]:
+) -> tuple[str | None, list[str], int, str]:  # (path, warnings, line_num, inserted_text)
     """Add a detail sub-bullet under an existing line."""
     match = _find_match(search_hint, vault_dir)
     if match is None:
         return None, [
             f"Não encontrei a tarefa '{search_hint}' para complementar."
-        ]
+        ], 0, ""
 
     lines = _read(match.path)
-    lines.insert(match.line_number, f"    - {detail}\n")
+    inserted = f"    - {detail}"
+    lines.insert(match.line_number, inserted + "\n")
 
     _write(match.path, lines)
-    return str(match.path), []
+    return str(match.path), [], match.line_number, inserted
 
 
 # ---------------------------------------------------------------------------

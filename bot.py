@@ -216,7 +216,8 @@ def _dispatch_item(
 
     if item_type == "task":
         line = format_task(data, time_str)
-        _register_undo(undo_id, daily_note_path)
+        _register_undo(undo_id, daily_note_path, "append",
+                       ("### ✅ Tarefas Registradas", line))
         append_to_section(daily_note_path, "### ✅ Tarefas Registradas", [line])
         return str(_rel_path(daily_note_path, vault_dir)), undo_id
 
@@ -249,43 +250,45 @@ def _dispatch_item(
         else:
             return None, undo_id
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
-        _register_undo(undo_id, daily_note_path)
+        _register_undo(undo_id, daily_note_path, "append",
+                       ("### 📓 Anotações", line))
         return str(_rel_path(daily_note_path, vault_dir)), undo_id
 
     elif item_type == "comment":
         line = format_comment(data)
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
-        _register_undo(undo_id, daily_note_path)
+        _register_undo(undo_id, daily_note_path, "append",
+                       ("### 📓 Anotações", line))
         return str(_rel_path(daily_note_path, vault_dir)), undo_id
 
     elif item_type == "mark_done":
-        # Snapshot common targets before edit (best effort — find_and_mark_done
-        # searches across files, but the daily note is the most likely target)
-        _register_undo(undo_id, daily_note_path)
-        _register_undo(undo_id, vault_dir / "10 Daily" / "Tarefas Recorrentes.md")
-        result_path, warns = find_and_mark_done(
+        result_path, warns, old_line, new_line = find_and_mark_done(
             data.task_hint, date_str, vault_dir,
             is_recurring=data.is_recurring,
             comment=data.comment,
         )
         warnings_out.extend(warns)
+        if result_path and old_line:
+            _register_undo(undo_id, Path(result_path), "replace", (new_line, old_line))
         return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
 
     elif item_type == "correction":
-        _register_undo(undo_id, daily_note_path)
-        result_path, warns = find_and_correct(
+        result_path, warns, old_line, new_line = find_and_correct(
             data.search_hint, data.new_field, data.new_value,
             vault_dir, data.search_scope,
         )
         warnings_out.extend(warns)
+        if result_path and old_line:
+            _register_undo(undo_id, Path(result_path), "replace", (new_line, old_line))
         return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
 
     elif item_type == "complement":
-        _register_undo(undo_id, daily_note_path)
-        result_path, warns = find_and_complement(
+        result_path, warns, line_num, inserted = find_and_complement(
             data.search_hint, data.detail, vault_dir,
         )
         warnings_out.extend(warns)
+        if result_path:
+            _register_undo(undo_id, Path(result_path), "insert_before", (line_num, inserted))
         return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
 
     elif item_type == "recurring_task":
@@ -293,7 +296,7 @@ def _dispatch_item(
         if line:
             target = vault_dir / "10 Daily" / "Tarefas Recorrentes.md"
             target.parent.mkdir(parents=True, exist_ok=True)
-            _register_undo(undo_id, target)
+            _register_undo(undo_id, target, "append", ("", line))
             with open(target, "a", encoding="utf-8") as f:
                 f.write("\n" + line + "\n")
             if warn:
@@ -313,7 +316,6 @@ def _dispatch_item(
                 f"Não encontrei a tarefa '{hint}' para desfazer."
             )
             return None, undo_id
-        _register_undo(undo_id, match.path)
         lines = _read(match.path)
         old = lines[match.line_number - 1]
         if '[x]' in old:
@@ -321,8 +323,10 @@ def _dispatch_item(
             new_line = re.sub(r'\s*✅\s*\S+', '', new_line)
             lines[match.line_number - 1] = new_line
             _write(match.path, lines)
+            _register_undo(undo_id, match.path, "replace", (new_line.strip(), old.strip()))
             return str(_rel_path(match.path, vault_dir)), undo_id
         elif old.strip().startswith('- [ ]'):
+            _register_undo(undo_id, match.path, "append", ("", old.strip()))
             del lines[match.line_number - 1]
             _write(match.path, lines)
             return str(_rel_path(match.path, vault_dir)), undo_id
@@ -473,31 +477,31 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await message.reply_text(f"✅ {resumo}")
 
 
-# Undo registry — maps action IDs to full file snapshots for /undo
-_undo_registry: dict[str, tuple[Path, str]] = {}  # id → (path, full_file_content_before)
+# Undo registry — maps action IDs to surgical undo operations
+# Each entry: (file_path, operation, params)
+# Operations:
+#   "append" → params = (section_heading, exact_line_text)
+#   "replace" → params = (old_line_text, new_line_text)
+#   "insert_before" → params = (line_number, inserted_text)
+_undo_registry: dict[str, tuple[Path, str, tuple]] = {}
 _undo_counter = 0
 
 
 def _next_undo_id() -> str:
-    """Generate a short action ID: 1, 2, 3, ..."""
     global _undo_counter
     _undo_counter += 1
     return str(_undo_counter)
 
 
-def _register_undo(undo_id: str, file_path: Path) -> None:
-    """Snapshot *file_path* before a modification. Max 50 entries."""
-    if file_path.exists():
-        _undo_registry[undo_id] = (file_path, file_path.read_text(encoding="utf-8"))
-    else:
-        _undo_registry[undo_id] = (file_path, "")  # File didn't exist before
+def _register_undo(undo_id: str, file_path: Path, operation: str, params: tuple) -> None:
+    _undo_registry[undo_id] = (file_path, operation, params)
     while len(_undo_registry) > 50:
         oldest = next(iter(_undo_registry))
         del _undo_registry[oldest]
 
 
 async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /undo [id] — revert a bot action by ID, or the last one."""
+    """Handle /undo [id] — surgically revert one action, keeping others intact."""
     message = update.message
     if not message:
         return
@@ -511,7 +515,6 @@ async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await message.reply_text("Nada para desfazer.")
         return
 
-    # If no ID given, undo the most recent
     if not text:
         undo_id = next(reversed(_undo_registry))
     else:
@@ -522,30 +525,53 @@ async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return
 
-    # If undoing a non-latest action, also discard all later actions
-    all_ids = list(_undo_registry.keys())
-    target_index = all_ids.index(undo_id)
-    discarded = all_ids[target_index + 1:]  # IDs after the undone one
-
-    file_path, old_content = _undo_registry.pop(undo_id)
-    for late_id in discarded:
-        del _undo_registry[late_id]
-
+    file_path, operation, params = _undo_registry.pop(undo_id)
     target = str(_rel_path(file_path, OBSIDIAN_VAULT_DIR))
 
-    # Restore the full file to its previous state
-    if old_content:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(old_content, encoding="utf-8")
-        msg = f"↩️ [{undo_id}] Desfeito: {target} restaurado."
+    if not file_path.exists():
+        await message.reply_text(f"❌ Arquivo {target} não existe mais.")
+        return
+
+    content = file_path.read_text(encoding="utf-8")
+
+    if operation == "append":
+        section, exact_line = params
+        # Remove the exact line from the file
+        if exact_line in content:
+            # Remove the line (with its surrounding newlines)
+            content = content.replace(exact_line + "\n", "")
+            content = content.replace("\n" + exact_line, "")
+            content = content.replace(exact_line, "")
+            file_path.write_text(content, encoding="utf-8")
+            await message.reply_text(f"↩️ [{undo_id}] Linha removida de {target}.")
+        else:
+            await message.reply_text(f"❌ [{undo_id}] Linha não encontrada (já foi removida?).")
+
+    elif operation == "replace":
+        old_line, new_line = params
+        if new_line in content:
+            content = content.replace(new_line, old_line)
+            file_path.write_text(content, encoding="utf-8")
+            await message.reply_text(f"↩️ [{undo_id}] Linha restaurada em {target}.")
+        elif old_line in content:
+            await message.reply_text(f"↩️ [{undo_id}] Já estava no estado original.")
+        else:
+            await message.reply_text(f"❌ [{undo_id}] Linha não encontrada em {target}.")
+
+    elif operation == "insert_before":
+        line_num, inserted_text = params
+        lines = content.splitlines(keepends=True)
+        # Find and remove the inserted text near line_num
+        for i in range(max(0, line_num - 2), min(len(lines), line_num + 2)):
+            if lines[i].strip() == inserted_text.strip():
+                del lines[i]
+                file_path.write_text("".join(lines))
+                await message.reply_text(f"↩️ [{undo_id}] Sub-bullet removido de {target}.")
+                return
+        await message.reply_text(f"❌ [{undo_id}] Texto não encontrado em {target}.")
+
     else:
-        file_path.unlink(missing_ok=True)
-        msg = f"↩️ [{undo_id}] Desfeito: {target} removido."
-
-    if discarded:
-        msg += f"\n⚠️ Ações posteriores {', '.join(discarded)} também foram descartadas."
-
-    await message.reply_text(msg)
+        await message.reply_text(f"❌ [{undo_id}] Operação desconhecida: {operation}")
 
 
 
