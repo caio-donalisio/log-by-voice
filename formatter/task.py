@@ -25,11 +25,11 @@ def format_task(data: TaskData, time_str: str = "") -> str:
     if data.priority and data.priority in _PRIORITY_MAP:
         parts.append(_PRIORITY_MAP[data.priority])
 
-    if data.due_date:
-        parts.append(f"📅 {data.due_date}")
-
     if time_str:
         parts.append(f"[time:: {time_str}]")
+
+    if data.due_date:
+        parts.append(f"📅 {data.due_date}")
 
     line = " ".join(parts)
 
