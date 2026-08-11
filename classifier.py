@@ -49,6 +49,13 @@ _REGISTRY.register_all([
 ])
 
 
+# Trigger phrases that force full-LLM mode (bypass patterns)
+_FORCE_LLM_RE = re.compile(
+    r"\b(?:usa\s+(?:a\s+)?(?:IA|intelig[êe]ncia\s+artificial)|modo\s+IA|analisa\s+(?:isso|esse|essa|melhor)|for[çc]a\s+(?:a\s+)?IA|deixa\s+(?:a\s+)?IA|com\s+IA)\b",
+    re.IGNORECASE,
+)
+
+
 def classify_transcript(
     transcript: str,
     claude_runner,
@@ -70,6 +77,17 @@ def classify_transcript(
         text that neither patterns nor LLM could classify (empty if all
         segments were handled).
     """
+    # Phase 0 — Force LLM bypass? User said "analisa isso", "usa IA", etc.
+    if _FORCE_LLM_RE.search(transcript):
+        logger.info("Force LLM: trigger phrase detected, bypassing patterns")
+        success, output = claude_runner(_build_llm_prompt(transcript, "(forçado pelo usuário)"))
+        if success:
+            llm_items = _parse_llm_output(output)
+            items = [_safe_validate(r) for r in llm_items]
+            stats.record(items, "")
+            return items, ""
+        # Fall through to normal flow on failure
+
     # Phase 1 — Pattern matching
     raw_items, unmatched = pattern_classify(transcript, _REGISTRY)
     items = [_safe_validate(r) for r in raw_items]
