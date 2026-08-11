@@ -522,18 +522,30 @@ async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return
 
+    # If undoing a non-latest action, also discard all later actions
+    all_ids = list(_undo_registry.keys())
+    target_index = all_ids.index(undo_id)
+    discarded = all_ids[target_index + 1:]  # IDs after the undone one
+
     file_path, old_content = _undo_registry.pop(undo_id)
+    for late_id in discarded:
+        del _undo_registry[late_id]
+
     target = str(_rel_path(file_path, OBSIDIAN_VAULT_DIR))
 
     # Restore the full file to its previous state
     if old_content:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(old_content, encoding="utf-8")
-        await message.reply_text(f"↩️ [{undo_id}] Desfeito: {target} restaurado ao estado anterior.")
+        msg = f"↩️ [{undo_id}] Desfeito: {target} restaurado."
     else:
-        # File was created by this action — delete it
         file_path.unlink(missing_ok=True)
-        await message.reply_text(f"↩️ [{undo_id}] Desfeito: {target} removido.")
+        msg = f"↩️ [{undo_id}] Desfeito: {target} removido."
+
+    if discarded:
+        msg += f"\n⚠️ Ações posteriores {', '.join(discarded)} também foram descartadas."
+
+    await message.reply_text(msg)
 
 
 
