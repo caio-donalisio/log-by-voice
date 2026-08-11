@@ -17,7 +17,7 @@ from typing import Literal
 
 ItemType = Literal[
     "task", "habit_log", "comment", "mark_done",
-    "correction", "complement", "recurring_task",
+    "correction", "complement", "recurring_task", "undo",
 ]
 
 HabitType = Literal["weight", "piano", "lifting", "cardio", "food", "expense"]
@@ -198,6 +198,10 @@ def validate_item(raw: dict) -> Item:
                 search_hint=str(data.get("search_hint", "")),
                 detail=str(data.get("detail", "")),
             )
+        elif item_type == "undo":
+            validated_data = MarkDoneData(  # Reuse — just needs task_hint
+                task_hint=str(data.get("task_hint", "")),
+            )
         elif item_type == "recurring_task":
             validated_data = RecurringTaskData(
                 description=str(data.get("description", "")),
@@ -226,7 +230,7 @@ def validate_item(raw: dict) -> Item:
 
 _VALID_TYPES: set[str] = {
     "task", "habit_log", "comment", "mark_done",
-    "correction", "complement", "recurring_task",
+    "correction", "complement", "recurring_task", "undo",
 }
 
 _VALID_HABITS: set[str] = {

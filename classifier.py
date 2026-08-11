@@ -22,6 +22,7 @@ from patterns.piano_cardio import piano_pattern, cardio_pattern
 from patterns.expense_food import expense_pattern, food_pattern
 from patterns.task_correction import task_pattern, correction_pattern
 from patterns.mark_done import mark_done_pattern
+from patterns.undo import undo_pattern
 from formatter.schema import validate_item
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ _REGISTRY.register_all([
     task_pattern,
     correction_pattern,
     mark_done_pattern,
+    undo_pattern,
 ])
 
 

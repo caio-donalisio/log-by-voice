@@ -119,6 +119,11 @@ def _describe_item(item: Item, target_file: str) -> str:
         desc = getattr(d, 'description', 'tarefa')
         return f"Tarefa recorrente \"{desc}\" em {where}"
 
+    # --- undo ---
+    if t == "undo":
+        hint = getattr(d, 'task_hint', 'tarefa')
+        return f"Desfeito: \"{hint}\" em {where}"
+
     return ""
 
 

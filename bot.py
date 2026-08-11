@@ -287,6 +287,36 @@ def _dispatch_item(
             warnings_out.append(warn)
         return None
 
+    elif item_type == "undo":
+        import re
+        from formatter.edits import _find_match, _read, _write
+        hint = getattr(data, 'task_hint', '')
+        match = _find_match(hint, vault_dir)
+        if match is None:
+            warnings_out.append(
+                f"Não encontrei a tarefa '{hint}' para desfazer."
+            )
+            return None
+        lines = _read(match.path)
+        old = lines[match.line_number - 1]
+        if '[x]' in old:
+            # Undo completion: reopen task
+            new_line = old.replace('[x]', '[ ]')
+            new_line = re.sub(r'\s*✅\s*\S+', '', new_line)
+            lines[match.line_number - 1] = new_line
+            _write(match.path, lines)
+            return str(_rel_path(match.path, vault_dir))
+        elif old.strip().startswith('- [ ]'):
+            # Undo creation: delete the line
+            del lines[match.line_number - 1]
+            _write(match.path, lines)
+            return str(_rel_path(match.path, vault_dir))
+        else:
+            warnings_out.append(
+                f"Encontrei '{hint}' mas não sei como desfazer esse tipo de linha."
+            )
+            return None
+
     return None
 
 
