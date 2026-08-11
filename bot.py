@@ -122,6 +122,10 @@ def run_claude_cli(prompt: str) -> tuple[bool, str]:
     _deepseek_env = Path(os.environ.get("DEEPSEEK_ENV_FILE", Path.home() / "deepseek.sh"))
     if _deepseek_env.exists():
         _source_env_file(_deepseek_env, env)
+        # Use flash model for bot calls (fast + cheap, don't need 1M context)
+        env["ANTHROPIC_MODEL"] = env.get(
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL", "deepseek-v4-flash"
+        )
 
     try:
         result = subprocess.run(
