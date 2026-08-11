@@ -48,7 +48,7 @@ def find_and_mark_done(
     comment: str | None = None,
 ) -> tuple[str | None, list[str], str, str]:  # (path, warnings, old_line, new_line)
     """Mark a task as done."""
-    match = _find_match(task_hint, vault_dir)
+    match = _find_match(task_hint, vault_dir, skip_completed=True)
     if match is None:
         return None, [
             f"Não encontrei a tarefa '{task_hint}' para marcar como concluída."
@@ -130,6 +130,7 @@ def _find_match(
     hint: str,
     vault_dir: Path,
     scope: str = "today",
+    skip_completed: bool = False,
 ) -> Match | None:
     """Search allowed directories for a line matching *hint*."""
     norm_hint = normalize(hint)
@@ -159,6 +160,9 @@ def _find_match(
                 continue
 
             for i, line in enumerate(content.splitlines(), start=1):
+                # For mark_done: skip already-completed tasks
+                if skip_completed and line.strip().startswith("- [x]"):
+                    continue
                 score = _score_line(norm_hint, normalize(line))
                 if score >= 60:
                     candidates.append(Match(md_file, i, line, score))
