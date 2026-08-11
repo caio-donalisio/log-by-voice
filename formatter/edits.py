@@ -174,7 +174,7 @@ def _find_match(
                 continue
 
             for i, line in enumerate(content.splitlines(), start=1):
-                score = _score_line(hint, normalize(line))
+                score = _score_line(norm_hint, normalize(line))
                 if score >= 60:
                     candidates.append(Match(md_file, i, line, score))
 
@@ -239,22 +239,50 @@ def _score_line(hint: str, norm_line: str) -> float:
     # Exact match
     if hint == core:
         return 100.0
-    # Substring
+    # Substring — bonus for partial match of the full hint in the core
     if hint in core:
-        return 80.0
+        return 85.0
     if core in hint:
         return 75.0
+    # Bonus: each word of hint that appears as substring in core
+    hint_words = hint.split()
+    matched_words = sum(1 for w in hint_words if w in core)
+    word_bonus = (matched_words / max(len(hint_words), 1)) * 10.0
     # Token overlap
     hint_tokens = set(hint.split())
     core_tokens = set(core.split())
     if not hint_tokens:
         return 0.0
-    overlap = len(hint_tokens & core_tokens) / len(hint_tokens)
+    # Stem match: count hint tokens that have a prefix match with any core token
+    stem_matches = 0
+    for ht in hint_tokens:
+        if ht in core_tokens:
+            stem_matches += 1
+        elif len(ht) >= 5:
+            # Check prefix overlap (e.g. organizar ≈ organizei)
+            prefix = ht[:5]
+            for ct in core_tokens:
+                if ct.startswith(prefix) and len(ct) >= len(ht) - 2:
+                    stem_matches += 0.8  # Near match
+                    break
+
+    effective_overlap = max(
+        len(hint_tokens & core_tokens),
+        stem_matches,
+    ) / max(len(hint_tokens), 1)
+    overlap = min(effective_overlap, 1.0)
+    score = 0.0
     if overlap > 0.5:
-        return 60.0 * overlap / 0.5
-    if overlap > 0.3:
-        return 40.0 * overlap / 0.3
-    return 0.0
+        score = 60.0 * overlap / 0.5
+    elif overlap > 0.3:
+        score = 40.0 * overlap / 0.3
+    # Add word-level substring bonus
+    score += word_bonus
+    # Fuzzy bonus: catches organizei≈organizar, documentos chinês vs japonês
+    import difflib
+    fuzzy = difflib.SequenceMatcher(None, hint, core).ratio()
+    score += fuzzy * 15.0
+    return score
 
 
 # ---------------------------------------------------------------------------
