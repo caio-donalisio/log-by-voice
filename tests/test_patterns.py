@@ -1,21 +1,13 @@
 """Regression tests for pattern matching against real transcripts (T20)."""
-from patterns import PatternRegistry
-from patterns.engine import classify
-from patterns.weight import weight_pattern
-from patterns.lifting import lifting_pattern
-from patterns.piano_cardio import piano_pattern, cardio_pattern
-from patterns.expense_food import expense_pattern, food_pattern
-from patterns.task_correction import task_pattern, correction_pattern
-from patterns.mark_done import mark_done_pattern
+from patterns import (
+    PatternRegistry, classify,
+    weight, lifting, piano, cardio, expense, food, task, correction, mark_done, undo,
+)
 
 
 def _registry():
     r = PatternRegistry()
-    r.register_all([
-        weight_pattern, lifting_pattern, piano_pattern, cardio_pattern,
-        expense_pattern, food_pattern, task_pattern, correction_pattern,
-        mark_done_pattern,
-    ])
+    r.register_all([weight, lifting, piano, cardio, expense, food, task, correction, mark_done, undo])
     return r
 
 

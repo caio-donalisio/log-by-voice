@@ -2,7 +2,7 @@
 import tempfile
 from pathlib import Path
 
-from formatter.daily_note import (
+from daily_note import (
     _resolve_template,
     _parse_date,
     ensure_daily_note,

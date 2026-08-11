@@ -1,6 +1,6 @@
 """Unit tests for schema validation (T1)."""
 import pytest
-from formatter.schema import (
+from formatter import (
     WeightData, TaskData, ExpenseData, FoodData,
     LiftingData, CommentData, validate_item,
 )

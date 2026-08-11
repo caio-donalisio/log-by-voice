@@ -314,3 +314,45 @@ def _write(path: Path, lines: list[str]) -> None:
 def _current_date_str() -> str:
     from datetime import date
     return date.today().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Recurring task creator
+# ---------------------------------------------------------------------------
+
+_PRIORITY_MAP = {"urgente": "🔺", "alta": "⏫", "média": "🔼"}
+
+
+def format_recurring(data, date_str: str, vault_dir: Path) -> tuple[str | None, str | None]:
+    from text_utils import normalize as _n
+    target = vault_dir / "10 Daily" / "Tarefas Recorrentes.md"
+    # Duplicate check
+    nd = _n(data.description)
+    if target.exists() and nd:
+        for line in target.read_text().splitlines():
+            if not line.strip().startswith("- [ ]"): continue
+            nl = _n(line)
+            if nl:
+                o = len(set(nd.split()) & set(nl.split())) / max(len(nd.split()), 1)
+                if o > 0.6: return None, f"Tarefa recorrente '{data.description}' já existe."
+    parts = ["- [ ]", data.description]
+    parts.append("#chore #payment" if data.is_payment else "#chore")
+    if data.priority in _PRIORITY_MAP: parts.append(_PRIORITY_MAP[data.priority])
+    parts.append(f"🔁 {data.frequency}")
+    if data.due_date: parts.append(f"📅 {data.due_date}")
+    elif data.due_day is not None:
+        from datetime import date as dt
+        today = dt.today()
+        try:
+            tgt = today.replace(day=min(data.due_day, 28))
+            if tgt <= today:
+                if today.month == 12: tgt = tgt.replace(year=today.year+1, month=1)
+                else: tgt = tgt.replace(month=today.month+1)
+            parts.append(f"📅 {tgt.isoformat()}")
+        except ValueError: pass
+    parts.append(f"➕ {date_str}")
+    line = " ".join(parts)
+    if target.exists() and not target.read_text().rstrip().endswith("---"):
+        line = "---\n" + line
+    else: line = "---\n" + line
+    return line, None
