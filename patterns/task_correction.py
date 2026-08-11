@@ -17,11 +17,17 @@ def _build_task(match, text: str) -> dict:
     # Extract description — everything after the trigger phrase
     desc = text
     desc = re.sub(
-        r"\b(?:registra\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|cria\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|anota\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|tenho\s+que|preciso\s*(?:de)?|n[ãa]o\s+esquecer\s*(?:de)?|lembrete\s*:?\s*)",
+        r"\b(?:registr[ae]\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|cri[ae]\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|anot[ae]\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|adicion[ae]\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|marqu[ei]\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|marcar\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|inser[ai]\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|inserir\s+(?:uma\s+)?tarefa\s*(?:de|pra|para)?|tenho\s+que|preciso\s*(?:de)?|n[ãa]o\s+esquecer\s*(?:de)?|lembrete\s*:?\s*)",
         "", desc, flags=re.IGNORECASE,
     )
     desc = desc.strip().rstrip(".")
     data["description"] = desc
+
+    # Flag explicit task commands for confidence boost
+    data["_explicit"] = bool(re.search(
+        r"\b(?:tarefa|registr[ae]|cri[ae]\s+tarefa|anot[ae]\s+tarefa|adicion[ae]\s+tarefa|marqu[ei]\s+tarefa|marcar\s+tarefa|inser[ai]\s+tarefa|inserir\s+tarefa)\b",
+        text, re.IGNORECASE,
+    ))
 
     # Priority
     if re.search(r"\burgente\b", text, re.IGNORECASE):
@@ -61,11 +67,12 @@ def _build_task(match, text: str) -> dict:
 
 
 def _adjust_task_confidence(item: dict, base: float) -> float:
-    """Boost confidence when the task has a deadline, date, or time hint."""
+    """Boost confidence when the task has explicit signals."""
     data = item.get("data", {})
-    # If there's a due date, time, or priority → strong signal
+    if data.get("_explicit"):
+        return 0.95  # "adicione tarefa", "marque tarefa", etc.
     if data.get("due_date") or data.get("due_day") or data.get("time") or data.get("priority"):
-        return min(base * 1.15, 0.95)
+        return 0.90
     return base
 
 
@@ -78,6 +85,11 @@ task_pattern = Pattern(
         r"\bregistr[ae]\b",
         r"\bcri[ae]\s+(?:uma\s+)?tarefa\b",
         r"\banot[ae]\s+(?:uma\s+)?tarefa\b",
+        r"\badicion[ae]\s+(?:uma\s+)?tarefa\b",
+        r"\bmarqu[ei]\s+(?:uma\s+)?tarefa\b",
+        r"\bmarcar\s+(?:uma\s+)?tarefa\b",
+        r"\binser[ai]\s+(?:uma\s+)?tarefa\b",
+        r"\binserir\s+(?:uma\s+)?tarefa\b",
         r"\btenho\s+que\b",
         r"\bpreciso\b",
         r"\bn[ãa]o\s+esquecer\b",
