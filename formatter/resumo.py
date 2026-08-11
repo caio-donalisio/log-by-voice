@@ -8,6 +8,7 @@ from formatter.schema import Item
 def generate_resumo(
     items: list[Item],
     target_files: list[str],
+    undo_ids: list[str],
     warnings: list[str],
     daily_note_created: bool = False,
 ) -> str:
@@ -20,10 +21,11 @@ def generate_resumo(
 
     parts: list[str] = []
 
-    for item, target in _zip_items_files(items, target_files):
+    for i, (item, target) in enumerate(_zip_items_files(items, target_files)):
         desc = _describe_item(item, target)
         if desc:
-            parts.append(desc)
+            uid = undo_ids[i] if i < len(undo_ids) else "?"
+            parts.append(f"[{uid}] {desc}")
 
     if daily_note_created:
         parts.append("nota diária criada")
