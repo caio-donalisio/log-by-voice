@@ -103,6 +103,9 @@ def _source_env_file(path: Path, target_env: dict[str, str]) -> None:
             key, _, value = line.partition("=")
             value = value.strip().strip("'").strip('"')
             target_env[key.strip()] = value
+    # Claude CLI uses ANTHROPIC_API_KEY, not ANTHROPIC_AUTH_TOKEN
+    if "ANTHROPIC_AUTH_TOKEN" in target_env and "ANTHROPIC_API_KEY" not in target_env:
+        target_env["ANTHROPIC_API_KEY"] = target_env["ANTHROPIC_AUTH_TOKEN"]
 
 
 def transcribe_audio(path: Path) -> str:
