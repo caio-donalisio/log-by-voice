@@ -51,7 +51,7 @@ _REGISTRY.register_all([
 
 # Trigger phrases that force full-LLM mode (bypass patterns)
 _FORCE_LLM_RE = re.compile(
-    r"\b(?:modo\s+IA|analisa\s+(?:isso|esse|essa|melhor)|for[çc]a\s+(?:a\s+)?IA|deixa\s+(?:a\s+)?IA)\b",
+    r"\b(?:modo\s+IA|for[çc]a\s+(?:a\s+)?IA|deixa\s+(?:a\s+)?IA)\b",
     re.IGNORECASE,
 )
 
