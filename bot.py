@@ -216,8 +216,7 @@ def _dispatch_item(
 
     if item_type == "task":
         line = format_task(data, time_str)
-        _snapshot_for_undo(undo_id, daily_note_path, "append",
-                       ("### ✅ Tarefas Registradas", line))
+        _snapshot_for_undo(undo_id, daily_note_path)
         append_to_section(daily_note_path, "### ✅ Tarefas Registradas", [line])
         return str(_rel_path(daily_note_path, vault_dir)), undo_id
 
@@ -250,15 +249,13 @@ def _dispatch_item(
         else:
             return None, undo_id
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
-        _snapshot_for_undo(undo_id, daily_note_path, "append",
-                       ("### 📓 Anotações", line))
+        _snapshot_for_undo(undo_id, daily_note_path)
         return str(_rel_path(daily_note_path, vault_dir)), undo_id
 
     elif item_type == "comment":
         line = format_comment(data)
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
-        _snapshot_for_undo(undo_id, daily_note_path, "append",
-                       ("### 📓 Anotações", line))
+        _snapshot_for_undo(undo_id, daily_note_path)
         return str(_rel_path(daily_note_path, vault_dir)), undo_id
 
     elif item_type == "mark_done":
@@ -269,7 +266,7 @@ def _dispatch_item(
         )
         warnings_out.extend(warns)
         if result_path and old_line:
-            _snapshot_for_undo(undo_id, Path(result_path), "replace", (new_line, old_line))
+            _snapshot_for_undo(undo_id, Path(result_path))
         return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
 
     elif item_type == "correction":
@@ -278,8 +275,8 @@ def _dispatch_item(
             vault_dir, data.search_scope,
         )
         warnings_out.extend(warns)
-        if result_path and old_line:
-            _snapshot_for_undo(undo_id, Path(result_path), "replace", (new_line, old_line))
+        if result_path:
+            _snapshot_for_undo(undo_id, Path(result_path))
         return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
 
     elif item_type == "complement":
@@ -288,7 +285,7 @@ def _dispatch_item(
         )
         warnings_out.extend(warns)
         if result_path:
-            _snapshot_for_undo(undo_id, Path(result_path), "insert_before", (line_num, inserted))
+            _snapshot_for_undo(undo_id, Path(result_path))
         return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
 
     elif item_type == "recurring_task":
@@ -296,7 +293,7 @@ def _dispatch_item(
         if line:
             target = vault_dir / "10 Daily" / "Tarefas Recorrentes.md"
             target.parent.mkdir(parents=True, exist_ok=True)
-            _snapshot_for_undo(undo_id, target, "append", ("", line))
+            _snapshot_for_undo(undo_id, target)
             with open(target, "a", encoding="utf-8") as f:
                 f.write("\n" + line + "\n")
             if warn:
@@ -323,10 +320,10 @@ def _dispatch_item(
             new_line = re.sub(r'\s*✅\s*\S+', '', new_line)
             lines[match.line_number - 1] = new_line
             _write(match.path, lines)
-            _snapshot_for_undo(undo_id, match.path, "replace", (new_line.strip(), old.strip()))
+            _snapshot_for_undo(undo_id, match.path)
             return str(_rel_path(match.path, vault_dir)), undo_id
         elif old.strip().startswith('- [ ]'):
-            _snapshot_for_undo(undo_id, match.path, "append", ("", old.strip()))
+            _snapshot_for_undo(undo_id, match.path)
             del lines[match.line_number - 1]
             _write(match.path, lines)
             return str(_rel_path(match.path, vault_dir)), undo_id
