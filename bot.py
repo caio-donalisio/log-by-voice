@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
 from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -456,12 +456,68 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await message.reply_text(f"✅ {resumo}")
 
 
+async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /undo <task description> — undo a task completion or creation."""
+    message = update.message
+    if not message:
+        return
+
+    # "/undo comprar pão" → "comprar pão"
+    # "/undo@botname comprar pão" → "comprar pão"
+    text = message.text.strip()
+    # Remove the bot username suffix if present
+    import re as _re
+    text = _re.sub(r"^/undo@\S+\s*", "", text)
+    text = text.removeprefix("/undo").strip()
+
+    if not text:
+        await message.reply_text("Uso: /undo <descrição da tarefa>")
+        return
+
+    import re
+    from formatter.edits import _find_match, _read, _write
+
+    match = _find_match(text, OBSIDIAN_VAULT_DIR)
+    if match is None:
+        await message.reply_text(
+            f"❌ Não encontrei a tarefa \"{text}\" para desfazer."
+        )
+        return
+
+    lines = _read(match.path)
+    old = lines[match.line_number - 1]
+    target = str(_rel_path(match.path, OBSIDIAN_VAULT_DIR))
+
+    if "[x]" in old:
+        new_line = old.replace("[x]", "[ ]")
+        new_line = re.sub(r"\s*✅\s*\S+", "", new_line)
+        lines[match.line_number - 1] = new_line
+        _write(match.path, lines)
+        await message.reply_text(
+            f"↩️ Tarefa \"{text}\" reaberta em {target}"
+        )
+    elif old.strip().startswith("- [ ]"):
+        del lines[match.line_number - 1]
+        _write(match.path, lines)
+        await message.reply_text(
+            f"🗑️ Tarefa \"{text}\" removida de {target}"
+        )
+    else:
+        await message.reply_text(
+            f"❌ Encontrei \"{text}\" mas não sei como desfazer esse tipo de linha."
+        )
+
+
 def build_application() -> Application:
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     audio_filter = (filters.VOICE | filters.AUDIO) & filters.User(
         user_id=ALLOWED_TELEGRAM_USER_ID
     )
     application.add_handler(MessageHandler(audio_filter, handle_audio))
+    # /undo command (text, same owner restriction)
+    application.add_handler(
+        CommandHandler("undo", handle_undo_command, filters=filters.User(user_id=ALLOWED_TELEGRAM_USER_ID))
+    )
     return application
 
 
