@@ -1,7 +1,7 @@
 """
 Bot do Telegram que recebe áudios (só do dono), transcreve localmente com
-faster-whisper e aciona o Claude Code CLI para transformar a transcrição
-numa entrada na nota diária do Obsidian.
+faster-whisper e usa um LLM local (Ollama) para classificar a transcrição
+e gerar entradas na nota diária do Obsidian.
 
 Roda no WSL; o vault e a pasta de áudios ficam no filesystem do Windows,
 acessados via /mnt/... (ver .env).
@@ -10,10 +10,8 @@ acessados via /mnt/... (ver .env).
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
-import subprocess
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -43,9 +41,9 @@ WHISPER_COMPUTE_TYPE = os.environ.get(
 )
 WHISPER_TIMEOUT_SECONDS = int(os.environ.get("WHISPER_TIMEOUT_SECONDS", "300"))
 LOCAL_TIMEZONE = ZoneInfo(os.environ.get("LOCAL_TIMEZONE", "America/Sao_Paulo"))
-CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH", "claude")
-CLAUDE_CONFIG_DIR = os.environ.get("CLAUDE_CONFIG_DIR")  # opcional, equivalente a um alias tipo `claude-caio`
-CLAUDE_TIMEOUT_SECONDS = int(os.environ.get("CLAUDE_TIMEOUT_SECONDS", "240"))
+LOCAL_LLM_MODEL = os.environ.get("LOCAL_LLM_MODEL", "llama3.1:8b")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+LOCAL_LLM_TIMEOUT_SECONDS = int(os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", "120"))
 
 AUDIO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -81,31 +79,10 @@ if _file_handler not in _root.handlers:
 whisper_model = WhisperModel(
     WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE
 )
-claude_lock = asyncio.Lock()
+llm_lock = asyncio.Lock()
 
 # Lido do disco a cada áudio (não carregado uma vez só na memória) — editar
 # esse arquivo muda o comportamento do bot no próximo áudio, sem reiniciar.
-PROMPT_TEMPLATE_PATH = BASE_DIR / "prompt_template.txt"
-
-
-def _source_env_file(path: Path, target_env: dict[str, str]) -> None:
-    """Parse a shell-style env file (export KEY=VALUE) into *target_env*."""
-    import re
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        # Strip "export " prefix
-        line = re.sub(r"^export\s+", "", line)
-        if "=" in line:
-            key, _, value = line.partition("=")
-            value = value.strip().strip("'").strip('"')
-            target_env[key.strip()] = value
-    # Claude CLI uses ANTHROPIC_API_KEY, not ANTHROPIC_AUTH_TOKEN
-    if "ANTHROPIC_AUTH_TOKEN" in target_env and "ANTHROPIC_API_KEY" not in target_env:
-        target_env["ANTHROPIC_API_KEY"] = target_env["ANTHROPIC_AUTH_TOKEN"]
 
 
 def transcribe_audio(path: Path) -> str:
@@ -113,79 +90,53 @@ def transcribe_audio(path: Path) -> str:
     return " ".join(segment.text.strip() for segment in segments).strip()
 
 
-def run_claude_cli(prompt: str) -> tuple[bool, str]:
-    env = os.environ.copy()
-    if CLAUDE_CONFIG_DIR:
-        env["CLAUDE_CONFIG_DIR"] = CLAUDE_CONFIG_DIR
+def run_local_llm(prompt: str, system_prompt: str = "") -> tuple[bool, str]:
+    """Run a prompt against the local Ollama model.
 
-    # Load DeepSeek env vars if available
-    _deepseek_env = Path(os.environ.get("DEEPSEEK_ENV_FILE", Path.home() / "deepseek.sh"))
-    if _deepseek_env.exists():
-        _source_env_file(_deepseek_env, env)
-        # Use flash model for bot calls (fast + cheap, don't need 1M context)
-        env["ANTHROPIC_MODEL"] = env.get(
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL", "deepseek-v4-flash"
-        )
+    Returns ``(success, output_text)`` — same signature the classifier and
+    calorie estimator expect.
+    """
+    import ollama
 
-    try:
-        result = subprocess.run(
-            [
-                CLAUDE_CLI_PATH,
-                "-p",
-                prompt,
-                "--permission-mode",
-                "acceptEdits",
-                "--output-format",
-                "json",
-            ],
-            cwd=str(OBSIDIAN_VAULT_DIR),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=CLAUDE_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
-        return False, f"Claude CLI excedeu o timeout de {CLAUDE_TIMEOUT_SECONDS}s."
-    except FileNotFoundError:
-        return False, (
-            f"Não encontrei o executável '{CLAUDE_CLI_PATH}'. Confira o "
-            "CLAUDE_CLI_PATH no .env."
-        )
+    client = ollama.Client(host=OLLAMA_HOST)
 
-    if result.returncode != 0:
-        stderr_tail = (result.stderr or "").strip()[-500:]
-        return False, f"Claude CLI retornou erro (code {result.returncode}): {stderr_tail}"
+    messages: list[dict[str, str]] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
 
     try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        logger.warning("Saída do Claude CLI não era JSON válido, usando texto bruto.")
-        return True, result.stdout.strip()
-
-    cost_usd = payload.get("total_cost_usd")
-    usage = payload.get("usage") or {}
-    if cost_usd is not None:
-        logger.info(
-            "Custo Claude: $%.4f (tokens entrada=%s cache_leitura=%s saída=%s)",
-            cost_usd,
-            usage.get("input_tokens"),
-            usage.get("cache_read_input_tokens"),
-            usage.get("output_tokens"),
+        response = client.chat(
+            model=LOCAL_LLM_MODEL,
+            messages=messages,
+            options={
+                "temperature": 0.1,   # low temp for structured output
+                "num_predict": 1024,  # max tokens — classification outputs are small
+            },
         )
+    except Exception as exc:
+        logger.error("Erro ao chamar Ollama (%s): %s", LOCAL_LLM_MODEL, exc)
+        return False, f"Ollama falhou: {exc}"
 
-    if payload.get("is_error"):
-        return False, f"Claude CLI retornou erro: {payload.get('result', '(sem detalhe)')}"
+    output = response["message"]["content"].strip()
+    tokens = response.get("eval_count") or response.get("done_count") or 0
+    logger.info(
+        "LLM local (%s): %d tokens gerados (load=%s ms, eval=%s ms)",
+        LOCAL_LLM_MODEL,
+        tokens,
+        response.get("load_duration", "?"),
+        response.get("eval_duration", "?"),
+    )
+    return True, output
 
-    return True, (payload.get("result") or "").strip()
 
-
-def extract_resumo(claude_stdout: str) -> str:
+def extract_resumo(llm_output: str) -> str:
     """Deprecated — kept for reference.  New pipeline uses formatter.resumo."""
-    for line in reversed(claude_stdout.splitlines()):
+    for line in reversed(llm_output.splitlines()):
         line = line.strip()
         if line.startswith("RESUMO:"):
             return line[len("RESUMO:"):].strip()
-    return claude_stdout[-300:] if claude_stdout else "(sem saída do Claude)"
+    return llm_output[-300:] if llm_output else "(sem saída do LLM)"
 
 
 def _dispatch_item(
@@ -367,7 +318,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await tg_file.download_to_drive(str(audio_path))
     logger.info("Áudio salvo em %s", audio_path)
 
-    async with claude_lock:
+    async with llm_lock:
         loop = asyncio.get_running_loop()
 
         try:
@@ -409,7 +360,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             # Phase 1 — Classify (pattern matching + optional LLM fallback)
             items, _unmatched = await loop.run_in_executor(
-                None, classify_transcript, transcript, run_claude_cli
+                None, classify_transcript, transcript, run_local_llm
             )
 
             # Phase 2 — Ensure daily note exists
@@ -432,7 +383,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 from calorie_estimator import estimate_calories
                 try:
                     cal_map = await loop.run_in_executor(
-                        None, estimate_calories, _needs_calories, run_claude_cli
+                        None, estimate_calories, _needs_calories, run_local_llm
                     )
                     for i, cals in cal_map.items():
                         items[i].data.calories = cals

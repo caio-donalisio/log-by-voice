@@ -8,13 +8,14 @@ import re
 
 logger = logging.getLogger(__name__)
 
+_CALORIE_SYSTEM = """\
+Você é um estimador de calorias. Dada uma lista de refeições, retorne APENAS
+um objeto JSON mapeando o índice (número) para calorias estimadas (inteiro).
+Sem texto antes ou depois. Exemplo: {"0": 550, "1": 120}"""
+
 _CALORIE_PROMPT = """\
-Estime as calorias de cada refeição abaixo. Retorne APENAS um objeto JSON
-mapeando o índice do item para o número estimado de calorias (inteiro).
+Estime as calorias (kcal) de cada item:
 
-Exemplo: {{"0": 550, "1": 120}}
-
-Itens:
 {items}
 
 JSON:"""
@@ -22,13 +23,13 @@ JSON:"""
 
 def estimate_calories(
     food_items: list[tuple[int, str]],
-    claude_runner,
+    llm_runner,
 ) -> dict[int, int]:
     """Estimate calories for food descriptions via LLM.
 
     Args:
         food_items: List of (index, description) tuples.
-        claude_runner: ``(prompt: str) -> tuple[bool, str]``
+        llm_runner: ``(prompt: str, system_prompt: str = "") -> tuple[bool, str]``
 
     Returns:
         Dict mapping index → estimated_calories.  Empty dict on failure.
@@ -42,7 +43,7 @@ def estimate_calories(
     )
     prompt = _CALORIE_PROMPT.format(items=items_text)
 
-    success, output = claude_runner(prompt)
+    success, output = llm_runner(prompt, system_prompt=_CALORIE_SYSTEM)
     if not success:
         logger.warning("Calorie estimation failed: %s", output[:200])
         return {}

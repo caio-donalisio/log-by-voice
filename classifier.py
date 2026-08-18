@@ -24,12 +24,24 @@ _FORCE_LLM_RE = re.compile(
 )
 
 
-def classify_transcript(transcript: str, claude_runner) -> tuple[list[Item], str]:
+_CLASSIFY_SYSTEM = """\
+Você é um classificador de transcrições de áudio pessoais em português.
+Sua única função é retornar um array JSON com a classificação de cada segmento.
+Regras absolutas:
+- Retorne APENAS o array JSON, sem texto antes ou depois.
+- Use APENAS os tipos e campos definidos no schema.
+- Na dúvida, classifique como "comment".
+- NUNCA invente datas, valores ou números.
+- expense: NUNCA estime amount — se não foi dito número, amount=null.
+- food: estime calorias se a pessoa descreveu a comida sem número; marque estimated=true."""
+
+def classify_transcript(transcript: str, llm_runner) -> tuple[list[Item], str]:
     # Force LLM?
     if _FORCE_LLM_RE.search(transcript):
         logger.info("Force LLM: trigger phrase detected, bypassing patterns")
-        success, output = claude_runner(
-            _build_llm_prompt(transcript, "(forçado pelo usuário)"))
+        success, output = llm_runner(
+            _build_llm_prompt(transcript, "(forçado pelo usuário)"),
+            system_prompt=_CLASSIFY_SYSTEM)
         if success:
             llm_items = _parse_llm_output(output)
             items = [_safe_validate(r) for r in llm_items]
@@ -49,8 +61,9 @@ def classify_transcript(transcript: str, claude_runner) -> tuple[list[Item], str
                 len(items), len(unmatched))
 
     # Phase 2 — LLM fallback
-    success, output = claude_runner(
-        _build_llm_prompt(unmatched, _build_already_summary(items)))
+    success, output = llm_runner(
+        _build_llm_prompt(unmatched, _build_already_summary(items)),
+        system_prompt=_CLASSIFY_SYSTEM)
     if not success:
         items.append(validate_item({"type": "comment", "data": {"text": f"[LLM fallback falhou] {unmatched[:300]}"},
                                     "_source": "fallback", "_confidence": 0.0}))

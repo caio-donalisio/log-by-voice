@@ -1,8 +1,8 @@
 # Telegram Audio Bot → Obsidian
 
 Recebe áudios seus no Telegram, salva em `audio_logs/`, transcreve localmente
-com faster-whisper e usa o Claude Code CLI para transformar a transcrição
-numa entrada na nota diária do vault (`10 Daily/YYYY-MM-DD.md`).
+com faster-whisper e usa um LLM local (Ollama) para classificar a transcrição
+e gerar entradas na nota diária do vault (`10 Daily/YYYY-MM-DD.md`).
 
 Roda dentro do **WSL** (Ubuntu). O código fica no filesystem nativo do Linux
 (`~/telegram_audio_bot`, mais rápido e sem os problemas do alias fantasma do
@@ -14,8 +14,14 @@ acessados via `/mnt/d/...`.
 - `python3` 3.12 ✓
 - `git` ✓
 - `uv` (gerenciador de pacotes/venv) ✓ — instalado em `~/.local/bin/uv`.
-- `claude` (Claude Code CLI) — já instalado e autenticado neste WSL,
-  independente da instalação do Windows. Confira com `claude --version`.
+- `ollama` — servidor de LLM local. Instale com:
+  ```bash
+  curl -fsSL https://ollama.com/install.sh | sh
+  ```
+  Depois puxe um modelo pequeno (recomendado: `llama3.1:8b` ou `qwen2.5:7b`):
+  ```bash
+  ollama pull llama3.1:8b
+  ```
 - Não precisa instalar ffmpeg — o faster-whisper decodifica o `.ogg` sozinho.
 
 ## 2. Instalar o projeto
@@ -44,14 +50,10 @@ Preencha:
 - `TELEGRAM_BOT_TOKEN`: o token do seu bot (@BotFather).
 - `ALLOWED_TELEGRAM_USER_ID`: seu ID numérico do Telegram (mande uma
   mensagem para `@userinfobot` pra descobrir).
-- `CLAUDE_CLI_PATH` / `CLAUDE_CONFIG_DIR`: se você usa um alias tipo
-  `claude-caio` no seu shell pra rodar o Claude Code com um perfil/config
-  específico (`alias claude-caio='CLAUDE_CONFIG_DIR="$HOME/.claude-caio" claude'`),
-  **não** coloque o nome do alias em `CLAUDE_CLI_PATH` — o bot chama o
-  processo direto, sem passar por um shell, então aliases não existem pra
-  ele. Deixe `CLAUDE_CLI_PATH=claude` e defina `CLAUDE_CONFIG_DIR` com o
-  mesmo caminho que o alias usa; o bot reproduz o efeito passando essa
-  variável de ambiente pro subprocesso.
+- `LOCAL_LLM_MODEL`: modelo Ollama a usar. O default é `llama3.1:8b`.
+  Alternativas boas: `qwen2.5:7b` (melhor em português), `mistral:7b`.
+  Modelos menores (3b) são mais rápidos mas menos precisos na classificação.
+- `OLLAMA_HOST`: endereço do servidor Ollama (default: `http://localhost:11434`).
 - Os demais campos já vêm com os valores certos pra essa máquina.
 
 ## 4. Testar manualmente
@@ -123,37 +125,15 @@ O WSL2 não usa o Agendador de Tarefas do Windows diretamente. Duas opções:
    horário do próprio áudio (não o horário de processamento).
 3. Transcreve localmente com faster-whisper (`medium`, português) e salva um
    `.txt` ao lado do áudio.
-4. Roda `claude -p "<prompt>" --permission-mode acceptEdits` com o diretório
-   de trabalho no vault. O prompt vem de `prompt_template.txt`, lido do disco
-   a cada áudio (não fica fixo na memória do processo) — editar esse arquivo
-   muda o comportamento do bot a partir do próximo áudio, sem precisar
-   reiniciar. O prompt instrui o Claude a criar/atualizar
-   `10 Daily/<data-do-áudio>.md` (e, quando for concluir uma tarefa
-   recorrente, também `10 Daily/Tarefas Recorrentes.md`), classificando cada
-   item da fala em: tarefa nova (checkbox em "Tarefas Registradas", com
-   data/prioridade só se foram ditas), log de hábito (peso, piano, musculação,
-   cardio, calorias, gastos — formatado com os campos e tags que os gráficos
-   do vault esperam, ex: `[weight:: 82] #log/fitness #fitness/weight`; pra
-   calorias, se a pessoa só descreveu a comida sem dar um número, o Claude
-   estima e marca como "(estimativa)" em vez de inventar que foi um número
-   dito — já pra gastos é o oposto, nunca estima valor em dinheiro, só
-   registra se um número foi dito), comentário livre (bullet simples, texto
-   limpo, sem ligação com nenhuma tarefa) ou conclusão de uma tarefa pendente
-   já existente (procura a tarefa em `10 Daily/**`, marca `[x]` e adiciona
-   `✅ <data>` sem alterar o resto da linha). Comentários ditos sobre uma
-   tarefa (nova ou concluída) entram como sub-bullet indentado abaixo dela,
-   em vez de virar uma anotação solta. Antes de escrever um log, o Claude lê
-   `10 Daily/_README.md` e a pasta do domínio (`70 Piano/**`,
-   `100 Fitness/**`) pra pegar o nome exato de peça/exercício — sem isso o
-   link não alimenta o histórico daquela nota. Se não conseguir achar com
-   segurança a tarefa que a pessoa diz ter concluído (ou se ela vive fora de
-   `10 Daily/**`, como em `30 Projetos/`), o Claude não arrisca
-   marcar a errada — só registra um comentário contando o que foi dito e
-   avisa no resumo.
-5. As permissões do Claude nesse projeto (`Obsidian Vault/.claude/settings.json`)
-   permitem leitura do vault inteiro (pra pegar nomes exatos e formato, e pra
-   localizar tarefas existentes), mas restringem escrita a `10 Daily/**` e
-   bloqueiam Bash/rede — o Claude só pode editar dentro dessa pasta, nada
-   fora dela. Na prática isso cobre a nota diária e `Tarefas Recorrentes.md`,
-   mas não tarefas em `30 Projetos/` ou `20 Pessoal/`.
-6. O bot responde no Telegram com um resumo curto do que foi adicionado.
+4. Classifica a transcrição em duas fases:
+   - **Pattern matching** (regex): cobre ~70% dos casos (tarefas, hábitos,
+     correções, etc.) sem tocar no LLM.
+   - **LLM local** (fallback): segmentos que os patterns não cobrem são enviados
+     ao Ollama (`LOCAL_LLM_MODEL`) com um prompt de classificação curto
+     (`prompt_classify.txt`). O modelo retorna JSON estruturado.
+5. Cada item classificado é formatado e escrito no vault pelo Python
+   (`formatter.py`, `daily_note.py`, `edits.py`) — a formatação é
+   determinística, não depende do LLM. O LLM só classifica; o Python escreve.
+6. Se o item for de comida sem calorias explícitas, uma segunda chamada ao LLM
+   (`calorie_estimator.py`) estima as calorias com um prompt mínimo.
+7. O bot responde no Telegram com um resumo curto do que foi adicionado.

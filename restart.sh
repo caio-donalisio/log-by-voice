@@ -38,11 +38,6 @@ for pid in $(pgrep -f "bot.py" 2>/dev/null || true); do
     kill -9 "$pid" 2>/dev/null || true
 done
 
-# Pull latest code
-cd "$BOT_DIR"
-echo "Pulling latest code..."
-git pull
-
 # Check vault accessibility
 VAULT_DIR=$(grep OBSIDIAN_VAULT_DIR .env | cut -d= -f2)
 if [ -n "$VAULT_DIR" ] && [ ! -d "$VAULT_DIR" ]; then
