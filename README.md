@@ -23,6 +23,183 @@ today.
   Anotações`) are Portuguese by design, since they're written into a
   Portuguese-language personal vault.
 
+## Setup
+
+What you'll need:
+
+- A Windows 10 or 11 computer
+- A [Telegram](https://telegram.org) account
+- [Obsidian](https://obsidian.md) installed, with a vault that has a
+  `10 Daily` subfolder inside it — create that folder now if it doesn't
+  exist, this is where the bot writes your notes
+- ~10GB of free disk space
+
+Every gray code box below is a command: type or copy-paste it into a
+terminal, then press Enter.
+
+### 1. Install WSL2
+
+The bot runs on Linux — WSL2 ("Windows Subsystem for Linux") runs a real
+Linux system inside Windows, no separate computer or dual-boot needed.
+
+1. Click Start, type `PowerShell`, right-click **Windows PowerShell** and
+   choose **Run as administrator**.
+2. Run:
+   ```powershell
+   wsl --install
+   ```
+3. This installs Ubuntu — takes 10-20 minutes depending on your connection.
+4. Restart your computer.
+5. An Ubuntu window opens automatically after restart (if not, click Start,
+   type `Ubuntu`, and open it). It asks you to create a **username and
+   password** for this Linux system, separate from your Windows login.
+   You'll type this password again whenever a command needs admin rights
+   (`sudo`). Note: the password doesn't show on screen while typing — not
+   even dots — that's normal.
+
+From here on, "open your terminal" means: click Start, type `Ubuntu`, open it.
+
+### 2. Install the tools the bot needs
+
+Run these one at a time:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+Updates Ubuntu's package list. May ask for the password from step 1.
+
+```bash
+sudo apt install -y git
+```
+`git` downloads the bot's code.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+Installs `uv`, which manages the Python environment — no manual Python setup
+needed. Close and reopen the terminal afterward so it's recognized.
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+Installs Ollama, which runs the local AI model that understands voice notes.
+Nothing is sent to the internet — the model runs entirely on your machine.
+
+### 3. Download the project
+
+```bash
+cd ~
+git clone https://github.com/caio-donalisio/log-by-voice.git
+cd log-by-voice
+uv sync
+```
+
+`uv sync` installs the bot's dependencies — can take a minute or two.
+
+### 4. Create your Telegram bot
+
+1. In Telegram, search for **@BotFather** (blue checkmark — the official bot
+   for creating bots) and start a chat.
+2. Send: `/newbot`
+3. Give it a name (anything, e.g. "My Voice Log").
+4. Give it a username — must be unique across Telegram and end in `bot`
+   (e.g. `caio_voice_log_bot`). Try another if it's taken.
+5. BotFather replies with a **token** like
+   `123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`. Copy it — you'll need it
+   in step 6. Treat it like a password: anyone with it can control your bot.
+
+### 5. Find your Telegram user ID
+
+The bot only responds to you, so it needs your numeric Telegram ID (not your
+`@username`).
+
+1. In Telegram, open a chat with **@userinfobot**.
+2. Send it any message.
+3. It replies with your info, including `Id: 8807566644`. Copy that number.
+
+### 6. Configure the bot
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+`nano` is a text editor inside the terminal — use arrow keys to move around.
+
+Fill in the fields from steps 4 and 5:
+- `TELEGRAM_BOT_TOKEN` — the token from BotFather
+- `ALLOWED_TELEGRAM_USER_ID` — your numeric ID from @userinfobot
+
+And your own folders:
+- `AUDIO_LOGS_DIR` — where to store `.ogg` + `.txt` files, e.g.
+  `/home/youruser/log-by-voice/audio_logs` (`youruser` is your Ubuntu
+  username — check it by running `whoami`)
+- `OBSIDIAN_VAULT_DIR` — your Obsidian vault root. If you're not sure of the
+  exact path: open File Explorer, navigate to the folder, click the address
+  bar to see the full path, and convert `D:\Some\Folder` into
+  `/mnt/d/Some/Folder` (lowercase drive letter, forward slashes)
+
+Everything else has a sensible default:
+- `LOCAL_LLM_MODEL` — Ollama model (default: `gemma4:e2b`, ~7.2GB)
+- `OLLAMA_HOST` — Ollama URL (default: `http://localhost:11434`)
+- `WHISPER_MODEL_SIZE` — `large-v3` (accurate) or `medium` (faster)
+- `WHISPER_LANGUAGE` — `pt` (Portuguese) — see [Language](#language)
+- `LOCAL_TIMEZONE` — e.g. `America/Sao_Paulo`
+- `LOCAL_LLM_TIMEOUT_SECONDS` — timeout for Ollama calls (120s)
+
+To save and exit nano: `Ctrl+O` (letter O, not zero), Enter, then `Ctrl+X`.
+
+### 7. Download the AI model
+
+```bash
+ollama pull gemma4:e2b
+```
+
+About 7.2GB — one-time download.
+
+### 8. Run the bot
+
+```bash
+uv run bot.py
+```
+
+The first run also downloads the transcription model (a few GB). Once ready,
+the log shows `Application started polling`. Leave this terminal window
+open — closing it stops the bot.
+
+Tip: open a second terminal window and run `tail -f bot.log` to watch logs
+in real time while you test.
+
+### 9. Test it
+
+1. Open Telegram, find the bot you created in step 4.
+2. Send it a voice message, e.g. "estou testando o bot" — it currently only
+   understands Portuguese, see [Language](#language) above.
+3. The bot replies with a summary starting with `✅ RESUMO:`.
+4. In Obsidian, check today's note in `10 Daily` — you should see a new line
+   with your transcription.
+
+If nothing happens, see [Troubleshooting](#troubleshooting).
+
+### 10. Keep it running automatically
+
+The bot only runs while the terminal from step 8 stays open. See
+[Running it 24/7](#running-it-247) below to have it start automatically and
+survive restarts — Option A (Windows Task Scheduler) is the simpler of the
+two.
+
+### Setup troubleshooting
+
+- **Changes to `.env` didn't take effect** — `nano` only saves on `Ctrl+O`;
+  closing it another way discards edits. Reopen with `nano .env` and redo
+  step 6.
+- **Bot doesn't respond at all** — check `ALLOWED_TELEGRAM_USER_ID` is the
+  numeric ID from @userinfobot, not your `@username`.
+- **Bot stopped working after a while** — the terminal window from step 8
+  was closed; see step 10.
+- **Ollama connection errors right after a restart** — its background
+  service can take ~30s to come up; wait and retry.
+
 ## Architecture
 
 ```
@@ -81,84 +258,6 @@ Input: "Muito cansado hoje"
 Input: "modo IA: é um texto que só a IA vai entender, ignora patterns"
 → [forces the call straight to the LLM, bypassing patterns]
 ```
-
-## Prerequisites
-
-Machine:
-- **WSL2** (Windows Subsystem for Linux 2) with Ubuntu
-- **Python 3.12+** with `uv` (package manager)
-- **Ollama** (local LLM server) — supports GPU via WSL2 passthrough
-
-External accounts:
-- **Telegram Bot Token** — create one via `@BotFather`, copy the token
-- **Your Telegram ID** — send a message to `@userinfobot`
-- **Obsidian Vault** — a folder with `10 Daily/` where the notes live
-
-## Installation
-
-### 1. Clone / prepare the project
-
-```bash
-git clone https://github.com/caio-donalisio/log-by-voice.git
-cd log-by-voice
-uv sync  # creates .venv + installs dependencies (python-telegram-bot, faster-whisper, ollama)
-```
-
-### 2. Configure environment variables
-
-```bash
-cp .env.example .env
-nano .env  # or your preferred editor
-```
-
-Fill in the essential fields:
-- `TELEGRAM_BOT_TOKEN` — token from `@BotFather`
-- `ALLOWED_TELEGRAM_USER_ID` — your numeric Telegram ID
-- `AUDIO_LOGS_DIR` — folder to store `.ogg` + `.txt` (Windows path via `/mnt/`)
-- `OBSIDIAN_VAULT_DIR` — Obsidian root (where the notes are)
-- `LOCAL_LLM_MODEL` — Ollama model (default: `gemma4:e2b`, ~7.2GB)
-- `OLLAMA_HOST` — Ollama URL (default: `http://localhost:11434`)
-
-Optional (sensible defaults provided):
-- `WHISPER_MODEL_SIZE` — `large-v3` (recommended) or `medium` (faster)
-- `WHISPER_LANGUAGE` — `pt` (Portuguese) — see [Language](#language)
-- `LOCAL_TIMEZONE` — local timezone (Brazil: `America/Sao_Paulo`)
-- `LOCAL_LLM_TIMEOUT_SECONDS` — timeout for Ollama calls (120s)
-
-### 3. Start Ollama
-
-```bash
-# Should already be running as a systemd service, but you can check:
-sudo systemctl status ollama
-
-# Or start it manually:
-ollama serve
-
-# Pull a model (one time only):
-ollama pull gemma4:e2b
-# alternatives: qwen2.5:7b, llama3.2:3b (smaller/faster), mistral:7b
-```
-
-### 4. Test it
-
-```bash
-uv run bot.py
-```
-
-You'll see in the log:
-- Whisper loading (~1-5min the first time, then cached)
-- `Application started polling` — bot ready to receive audio
-
-Send an audio message via Telegram from the authorized account. The bot should:
-1. Download the audio to `AUDIO_LOGS_DIR/{timestamp}_{id}.ogg`
-2. Transcribe it (a few seconds with GPU, ~1min on CPU)
-3. Classify it (pattern matching +/- LLM, ~5-8s)
-4. Write it to the Obsidian daily note
-5. Reply on Telegram: `✅ RESUMO: [classified items]`
-
-On error, the bot notifies you on Telegram and the `.txt` transcript stays saved (nothing is lost).
-
-**Tip**: run `tail -f bot.log` in another terminal to watch logs in real time.
 
 ## Running it 24/7
 
