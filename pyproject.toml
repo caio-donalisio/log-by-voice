@@ -1,7 +1,7 @@
 [project]
-name = "telegram-audio-bot"
+name = "log-by-voice"
 version = "0.1.0"
-description = "Bot Telegram que transcreve audios localmente (faster-whisper) e gera notas diarias no Obsidian via LLM local (Ollama)"
+description = "Telegram bot that transcribes voice notes locally (faster-whisper) and logs structured entries to Obsidian daily notes via pattern matching + a local LLM (Ollama)"
 requires-python = ">=3.10"
 dependencies = [
     "python-telegram-bot>=21.6",

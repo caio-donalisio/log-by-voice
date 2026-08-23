@@ -1,10 +1,10 @@
 """
-Bot do Telegram que recebe áudios (só do dono), transcreve localmente com
-faster-whisper e usa um LLM local (Ollama) para classificar a transcrição
-e gerar entradas na nota diária do Obsidian.
+Telegram bot that receives audio messages (owner only), transcribes them
+locally with faster-whisper, and uses a local LLM (Ollama) to classify the
+transcript and generate entries in the Obsidian daily note.
 
-Roda no WSL; o vault e a pasta de áudios ficam no filesystem do Windows,
-acessados via /mnt/... (ver .env).
+Runs on WSL; the vault and the audio folder live on the Windows filesystem,
+accessed via /mnt/... (see .env).
 """
 
 from __future__ import annotations
@@ -31,10 +31,10 @@ AUDIO_LOGS_DIR = Path(os.environ["AUDIO_LOGS_DIR"])
 OBSIDIAN_VAULT_DIR = Path(os.environ["OBSIDIAN_VAULT_DIR"])
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "medium")
 WHISPER_LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "pt")
-# "auto" tenta CUDA se detectar GPU, mas no WSL isso costuma achar o driver
-# sem as libs cuBLAS/cuDNN instaladas e quebrar na hora de transcrever.
-# CPU é o default seguro; troque via WHISPER_DEVICE=cuda se instalar o
-# toolkit CUDA completo no WSL.
+# "auto" tries CUDA if it detects a GPU, but on WSL this usually finds the
+# driver without the cuBLAS/cuDNN libs installed and breaks at transcription
+# time. CPU is the safe default; switch via WHISPER_DEVICE=cuda if you
+# install the full CUDA toolkit on WSL.
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.environ.get(
     "WHISPER_COMPUTE_TYPE", "int8" if WHISPER_DEVICE == "cpu" else "auto"
@@ -81,8 +81,8 @@ whisper_model = WhisperModel(
 )
 llm_lock = asyncio.Lock()
 
-# Lido do disco a cada áudio (não carregado uma vez só na memória) — editar
-# esse arquivo muda o comportamento do bot no próximo áudio, sem reiniciar.
+# Read from disk on every audio (not loaded once into memory) — editing
+# this file changes the bot's behavior on the next audio, without a restart.
 
 
 def transcribe_audio(path: Path) -> str:
@@ -115,13 +115,13 @@ def run_local_llm(prompt: str, system_prompt: str = "") -> tuple[bool, str]:
             },
         )
     except Exception as exc:
-        logger.error("Erro ao chamar Ollama (%s): %s", LOCAL_LLM_MODEL, exc)
-        return False, f"Ollama falhou: {exc}"
+        logger.error("Error calling Ollama (%s): %s", LOCAL_LLM_MODEL, exc)
+        return False, f"Ollama failed: {exc}"
 
     output = response["message"]["content"].strip()
     tokens = response.get("eval_count") or response.get("done_count") or 0
     logger.info(
-        "LLM local (%s): %d tokens gerados (load=%s ms, eval=%s ms)",
+        "Local LLM (%s): %d tokens generated (load=%s ms, eval=%s ms)",
         LOCAL_LLM_MODEL,
         tokens,
         response.get("load_duration", "?"),
@@ -311,12 +311,12 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     # Only skip if BOTH audio AND transcript exist (crashes leave orphan .ogg)
     if audio_path.exists() and transcript_path.exists():
-        logger.info("Áudio %s já processado, ignorando duplicata.", audio_path.name)
+        logger.info("Audio %s already processed, skipping duplicate.", audio_path.name)
         return
 
     tg_file = await media.get_file()
     await tg_file.download_to_drive(str(audio_path))
-    logger.info("Áudio salvo em %s", audio_path)
+    logger.info("Audio saved to %s", audio_path)
 
     async with llm_lock:
         loop = asyncio.get_running_loop()
@@ -327,7 +327,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 timeout=WHISPER_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
-            logger.error("Transcrição de %s excedeu timeout (%ds)", audio_path, WHISPER_TIMEOUT_SECONDS)
+            logger.error("Transcription of %s exceeded timeout (%ds)", audio_path, WHISPER_TIMEOUT_SECONDS)
             await message.reply_text(
                 "⚠️ A transcrição demorou demais e foi cancelada. "
                 "O áudio foi salvo e será reprocessado na próxima tentativa."
@@ -336,7 +336,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             transcript_path.unlink(missing_ok=True)
             return
         except Exception:
-            logger.exception("Falha ao transcrever %s", audio_path)
+            logger.exception("Failed to transcribe %s", audio_path)
             await message.reply_text(
                 "Não consegui transcrever esse áudio. Ele ficou salvo em "
                 f"{audio_path}, mas nada foi escrito no Obsidian."
@@ -344,7 +344,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
 
         transcript_path.write_text(transcript, encoding="utf-8")
-        logger.info("Transcrição salva em %s", transcript_path)
+        logger.info("Transcript saved to %s", transcript_path)
 
         if not transcript:
             await message.reply_text(
@@ -390,11 +390,11 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                         items[i].data.estimated = True
                     if cal_map:
                         logger.info(
-                            "Calorias estimadas para %d/%d itens de comida",
+                            "Estimated calories for %d/%d food items",
                             len(cal_map), len(_needs_calories),
                         )
                 except Exception:
-                    logger.exception("Falha ao estimar calorias — seguindo sem estimativa")
+                    logger.exception("Failed to estimate calories — continuing without estimate")
                     # Don't crash the pipeline — just skip calorie estimation
 
             # Phase 4 — Format + write each item
@@ -416,7 +416,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
 
         except Exception:
-            logger.exception("Falha no pipeline de classificação")
+            logger.exception("Classification pipeline failed")
             await message.reply_text(
                 "⚠️ A transcrição foi salva, mas houve um erro ao processar: "
                 f"verifique o log. Transcrição: {transcript_path}"
@@ -486,11 +486,11 @@ def main() -> None:
     _pid_file.write_text(str(os.getpid()))
 
     logger.info(
-        "Iniciando bot (modelo Whisper=%s, vault=%s)", WHISPER_MODEL_SIZE, OBSIDIAN_VAULT_DIR
+        "Starting bot (Whisper model=%s, vault=%s)", WHISPER_MODEL_SIZE, OBSIDIAN_VAULT_DIR
     )
     if not OBSIDIAN_VAULT_DIR.is_dir():
         logger.error(
-            "VAULT INACESSÍVEL: %s — o bot vai iniciar mas falhará ao processar áudios.",
+            "VAULT UNREACHABLE: %s — the bot will start but will fail to process audio.",
             OBSIDIAN_VAULT_DIR,
         )
 
@@ -515,7 +515,7 @@ def _notify_crash(delay: int) -> None:
         }
         httpx.post(url, json=payload, timeout=10)
     except Exception:
-        logger.exception("Não foi possível enviar notificação de crash")
+        logger.exception("Could not send crash notification")
 
 
 def _recover_orphans() -> None:
@@ -531,7 +531,7 @@ def _recover_orphans() -> None:
             orphans.append(ogg)
     if orphans:
         logger.warning(
-            "Encontrados %d áudio(s) órfão(s) (sem transcrição): %s",
+            "Found %d orphaned audio file(s) (no transcript): %s",
             len(orphans),
             [o.name for o in orphans],
         )
@@ -545,7 +545,7 @@ def _recover_orphans() -> None:
             break
         except Exception:
             logger.exception(
-                "Bot caiu de forma inesperada, reiniciando em %ss", backoff_seconds
+                "Bot crashed unexpectedly, restarting in %ss", backoff_seconds
             )
             # Notify user on Telegram
             _notify_crash(backoff_seconds)

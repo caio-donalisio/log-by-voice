@@ -1,171 +1,190 @@
 # Log by Voice: Telegram Audio Bot → Obsidian
 
-Um bot do Telegram que transcreve áudios localmente, classifica-os automaticamente
-com padrões rápidos + LLM inteligente, e escreve entradas estruturadas numa nota
-diária do Obsidian. Tudo roda **offline e localmente** — seus dados nunca saem da máquina.
+A Telegram bot that transcribes voice messages locally, automatically classifies
+them with fast patterns + a local LLM, and writes structured entries into an
+Obsidian daily note. Everything runs **offline and locally** — your data never
+leaves the machine.
 
-## Arquitetura
+## Language
+
+This bot is built to process **Portuguese** audio and text. The codebase,
+comments, logs, and this documentation are in English, but the bot's actual
+runtime behavior — what it transcribes, how it classifies content, what it
+writes to the vault, and what it replies on Telegram — is Portuguese-only
+today.
+
+- `WHISPER_LANGUAGE` (in `.env`) controls the transcription language
+  (default `pt`). This is the language config option.
+- Changing `WHISPER_LANGUAGE` alone does **not** make the bot support another
+  language end-to-end. The LLM classification prompt (`prompt_classify.txt`)
+  and the regex patterns (`patterns.py`) are hardcoded for Portuguese —
+  supporting a different language would require translating those too.
+- Vault content, Telegram replies, and section headings (e.g. `### 📓
+  Anotações`) are Portuguese by design, since they're written into a
+  Portuguese-language personal vault.
+
+## Architecture
 
 ```
-Você envia áudio via Telegram
+You send audio via Telegram
            ↓
        Bot (polling)
            ↓
-    [Transcrição] — Whisper (local, GPU)
+    [Transcription] — Whisper (local, GPU)
            ↓
-    [Classificação] — 2 fases:
-        Phase 1: Pattern matching (regex, rápido ~0ms)
-        Phase 2: LLM local (Ollama, fallback ~5-8s)
+    [Classification] — 2 phases:
+        Phase 1: Pattern matching (regex, fast ~0ms)
+        Phase 2: Local LLM (Ollama, fallback ~5-8s)
            ↓
-    [Formatação] — Estrutura JSON → Markdown
+    [Formatting] — JSON structure → Markdown
            ↓
-    Nota diária do Obsidian (em tempo real)
+    Obsidian daily note (real time)
            ↓
-    Bot responde no Telegram: "✅ RESUMO: ..."
+    Bot replies on Telegram: "✅ RESUMO: ..."
 ```
 
-## Stack técnico
+## Tech stack
 
 - **Bot**: `python-telegram-bot` (async, polling)
-- **Transcrição**: `faster-whisper` large-v3 (local, suporta GPU)
-- **Classificação**: 
-  - Phase 1: regexes estruturadas em `patterns.py` (70-80% dos casos)
-  - Phase 2: LLM remoto (Ollama) com prompt estruturado (`prompt_classify.txt`)
-- **LLM**: **Ollama** (`gemma4:e2b` em GPU RTX 2060, ~86 tok/s)
-- **Armazenamento**: 
-  - Transcrições: `AUDIO_LOGS_DIR` (Windows)
-  - Vault: `OBSIDIAN_VAULT_DIR` (Windows, acessado via `/mnt/d`)
-- **Plataforma**: WSL2 Ubuntu (Linux filesystem pra performance Python)
+- **Transcription**: `faster-whisper` large-v3 (local, GPU-capable)
+- **Classification**:
+  - Phase 1: structured regexes in `patterns.py` (70-80% of cases)
+  - Phase 2: remote LLM (Ollama) with a structured prompt (`prompt_classify.txt`)
+- **LLM**: **Ollama** (`gemma4:e2b` on an RTX 2060 GPU, ~86 tok/s)
+- **Storage**:
+  - Transcripts: `AUDIO_LOGS_DIR` (Windows)
+  - Vault: `OBSIDIAN_VAULT_DIR` (Windows, accessed via `/mnt/d`)
+- **Platform**: WSL2 Ubuntu (Linux filesystem for Python performance)
 
-## O que o bot classifica
+## What the bot classifies
 
-Tipos de itens reconhecidos:
-- **`task`** — "Preciso arrumar o portão" → tarefa com prioridade/data opcional
-- **`habit_log`** — "Corri 30 min" → log de hábito (`cardio`, `weight`, `piano`, `lifting`, `food`, `expense`)
-- **`comment`** — texto livre sem classificação estruturada
-- **`mark_done`** — "Concluído: aquela tarefa" → marca tarefa anterior como feita
-- **`correction`** — "Corrige: anterior, coloca X" → edita item anterior
-- **`complement`** — "Complementa: e também Y" → adiciona detalhe a item anterior
-- **`recurring_task`** — "Mensalmente: pagar conta" → tarefa recorrente
+Recognized item types:
+- **`task`** — "Preciso arrumar o portão" → a task with optional priority/date
+- **`habit_log`** — "Corri 30 min" → a habit log (`cardio`, `weight`, `piano`, `lifting`, `food`, `expense`)
+- **`comment`** — free text with no structured classification
+- **`mark_done`** — "Concluído: aquela tarefa" → marks a previous task as done
+- **`correction`** — "Corrige: anterior, coloca X" → edits a previous item
+- **`complement`** — "Complementa: e também Y" → adds detail to a previous item
+- **`recurring_task`** — "Mensalmente: pagar conta" → a recurring task
 
-Exemplos de reconhecimento:
+Recognition examples (input is spoken Portuguese, since that's what the bot processes):
 ```
-Entrada: "Comprei pão e leite (R$25)"
+Input: "Comprei pão e leite (R$25)"
 → expense: description="pão e leite", amount=25.0, category="Mercado"
 
-Entrada: "Peso: 82.5"
+Input: "Peso: 82.5"
 → habit_log: habit="weight", weight_kg=82.5
 
-Entrada: "Muito cansado hoje"
-→ comment: "Muito cansado hoje"  [LLM fallback — ambiguidade]
+Input: "Muito cansado hoje"
+→ comment: "Muito cansado hoje"  [LLM fallback — ambiguous]
 
-Entrada: "modo IA: é um texto que só a IA vai entender, ignora patterns"
-→ [força chamada direto pro LLM, bypassa patterns]
+Input: "modo IA: é um texto que só a IA vai entender, ignora patterns"
+→ [forces the call straight to the LLM, bypassing patterns]
 ```
 
-## Pré-requisitos
+## Prerequisites
 
-Máquina:
-- **WSL2** (Windows Subsystem for Linux 2) com Ubuntu
-- **Python 3.12+** com `uv` (gerenciador de pacotes)
-- **Ollama** (servidor LLM local) — suporta GPU via passthrough do WSL2
+Machine:
+- **WSL2** (Windows Subsystem for Linux 2) with Ubuntu
+- **Python 3.12+** with `uv` (package manager)
+- **Ollama** (local LLM server) — supports GPU via WSL2 passthrough
 
-Contas externas:
-- **Telegram Bot Token** — crie em `@BotFather`, copie o token
-- **Seu ID do Telegram** — mande uma mensagem para `@userinfobot`
-- **Obsidian Vault** — pasta com `10 Daily/` onde as notas ficam
+External accounts:
+- **Telegram Bot Token** — create one via `@BotFather`, copy the token
+- **Your Telegram ID** — send a message to `@userinfobot`
+- **Obsidian Vault** — a folder with `10 Daily/` where the notes live
 
-## Instalação
+## Installation
 
-### 1. Clonar / preparar o projeto
+### 1. Clone / prepare the project
 
 ```bash
 git clone https://github.com/caio-donalisio/log-by-voice.git
 cd log-by-voice
-uv sync  # cria .venv + instala dependências (py-telegram-bot, faster-whisper, ollama)
+uv sync  # creates .venv + installs dependencies (python-telegram-bot, faster-whisper, ollama)
 ```
 
-### 2. Configurar variáveis de ambiente
+### 2. Configure environment variables
 
 ```bash
 cp .env.example .env
-nano .env  # ou seu editor preferido
+nano .env  # or your preferred editor
 ```
 
-Preencha os campos essenciais:
-- `TELEGRAM_BOT_TOKEN` — token do `@BotFather`
-- `ALLOWED_TELEGRAM_USER_ID` — seu ID numérico do Telegram
-- `AUDIO_LOGS_DIR` — pasta onde gravar `.ogg` + `.txt` (Windows path via `/mnt/`)
-- `OBSIDIAN_VAULT_DIR` — raiz do Obsidian (onde estão as notes)
-- `LOCAL_LLM_MODEL` — modelo Ollama (padrão: `gemma4:e2b`, ~7.2GB)
-- `OLLAMA_HOST` — URL do Ollama (padrão: `http://localhost:11434`)
+Fill in the essential fields:
+- `TELEGRAM_BOT_TOKEN` — token from `@BotFather`
+- `ALLOWED_TELEGRAM_USER_ID` — your numeric Telegram ID
+- `AUDIO_LOGS_DIR` — folder to store `.ogg` + `.txt` (Windows path via `/mnt/`)
+- `OBSIDIAN_VAULT_DIR` — Obsidian root (where the notes are)
+- `LOCAL_LLM_MODEL` — Ollama model (default: `gemma4:e2b`, ~7.2GB)
+- `OLLAMA_HOST` — Ollama URL (default: `http://localhost:11434`)
 
-Opcionais (vêm com defaults sensatos):
-- `WHISPER_MODEL_SIZE` — `large-v3` (recomendado) ou `medium` (mais rápido)
-- `WHISPER_LANGUAGE` — `pt` (português)
-- `LOCAL_TIMEZONE` — fuso horário local (PT Brasil: `America/Sao_Paulo`)
-- `LOCAL_LLM_TIMEOUT_SECONDS` — timeout pra chamadas Ollama (120s)
+Optional (sensible defaults provided):
+- `WHISPER_MODEL_SIZE` — `large-v3` (recommended) or `medium` (faster)
+- `WHISPER_LANGUAGE` — `pt` (Portuguese) — see [Language](#language)
+- `LOCAL_TIMEZONE` — local timezone (Brazil: `America/Sao_Paulo`)
+- `LOCAL_LLM_TIMEOUT_SECONDS` — timeout for Ollama calls (120s)
 
-### 3. Iniciar Ollama
+### 3. Start Ollama
 
 ```bash
-# Já deve estar rodando como systemd, mas pode conferir:
+# Should already be running as a systemd service, but you can check:
 sudo systemctl status ollama
 
-# Ou iniciar manualmente:
+# Or start it manually:
 ollama serve
 
-# Puxar modelo (uma única vez):
+# Pull a model (one time only):
 ollama pull gemma4:e2b
-# alternativas: qwen2.5:7b, llama3.2:3b (menor/mais rápido), mistral:7b
+# alternatives: qwen2.5:7b, llama3.2:3b (smaller/faster), mistral:7b
 ```
 
-### 4. Testar
+### 4. Test it
 
 ```bash
 uv run bot.py
 ```
 
-Você verá no log:
-- Carregamento do Whisper (~1-5min primeira vez, depois está em cache)
-- `Application started polling` — bot pronto pra receber áudios
+You'll see in the log:
+- Whisper loading (~1-5min the first time, then cached)
+- `Application started polling` — bot ready to receive audio
 
-Envie um áudio via Telegram na conta autorizada. O bot deve:
-1. Baixar o áudio em `AUDIO_LOGS_DIR/{timestamp}_{id}.ogg`
-2. Transcrever (alguns segundos com GPU, ou ~1min em CPU)
-3. Classificar (pattern matching +/- LLM, ~5-8s)
-4. Escrever na nota diária do Obsidian
-5. Responder no Telegram: `✅ RESUMO: [items classificados]`
+Send an audio message via Telegram from the authorized account. The bot should:
+1. Download the audio to `AUDIO_LOGS_DIR/{timestamp}_{id}.ogg`
+2. Transcribe it (a few seconds with GPU, ~1min on CPU)
+3. Classify it (pattern matching +/- LLM, ~5-8s)
+4. Write it to the Obsidian daily note
+5. Reply on Telegram: `✅ RESUMO: [classified items]`
 
-Se errar, o bot avisa no Telegram e a transcrição `.txt` fica salva (nada se perde).
+On error, the bot notifies you on Telegram and the `.txt` transcript stays saved (nothing is lost).
 
-**Dica**: rode `tail -f bot.log` em outro terminal pra ver os logs em tempo real.
+**Tip**: run `tail -f bot.log` in another terminal to watch logs in real time.
 
-## Deixar rodando 24/7
+## Running it 24/7
 
-O bot roda em polling contínuo — precisa estar sempre ligado pra receber áudios.
+The bot runs continuous polling — it needs to stay on to receive audio.
 
-### Opção A: Tarefa Agendada do Windows (simples)
+### Option A: Windows Task Scheduler (simple)
 
-1. Abra **Agendador de Tarefas** (`taskschd.msc`)
-2. *Criar Tarefa Básica*:
-   - Nome: `Log by Voice Bot`
-   - Gatilho: *Ao fazer logon*
-   - Ação: *Iniciar um programa*
-     - Programa: `wsl.exe`
-     - Argumentos: `-d Ubuntu-Personal -- bash -lc "cd ~/log-by-voice && uv run bot.py"`
-3. OK. Próximo logon, o bot inicia automaticamente.
+1. Open **Task Scheduler** (`taskschd.msc`)
+2. *Create Basic Task*:
+   - Name: `Log by Voice Bot`
+   - Trigger: *At log on*
+   - Action: *Start a program*
+     - Program: `wsl.exe`
+     - Arguments: `-d Ubuntu-Personal -- bash -lc "cd ~/log-by-voice && uv run bot.py"`
+3. OK. On the next login, the bot starts automatically.
 
-### Opção B: systemd no WSL (recomendado — reinicia se cair)
+### Option B: systemd on WSL (recommended — restarts on crash)
 
-1. Confirme que systemd está ativo:
+1. Confirm systemd is active:
    ```bash
    cat /etc/wsl.conf | grep systemd
-   # deve conter: [boot]\nsystemd=true
+   # should contain: [boot]\nsystemd=true
    ```
-   Se não tiver, rode `wsl.exe --shutdown` (PowerShell) e reinicie.
+   If not, add it and run `wsl.exe --shutdown` (PowerShell), then reopen WSL.
 
-2. Crie `/etc/systemd/system/log-by-voice.service`:
+2. Create `/etc/systemd/system/log-by-voice.service`:
    ```ini
    [Unit]
    Description=Log by Voice Telegram Bot
@@ -183,60 +202,60 @@ O bot roda em polling contínuo — precisa estar sempre ligado pra receber áud
    WantedBy=multi-user.target
    ```
 
-3. Ativar:
+3. Enable it:
    ```bash
    sudo systemctl daemon-reload
    sudo systemctl enable --now log-by-voice.service
-   sudo systemctl status log-by-voice.service  # verificar
+   sudo systemctl status log-by-voice.service  # verify
    ```
 
-4. Visualizar logs:
+4. View logs:
    ```bash
    sudo journalctl -u log-by-voice -f  # streaming
-   tail -f bot.log  # ou o arquivo local
+   tail -f bot.log  # or the local file
    ```
 
-## Fluxo técnico detalhado
+## Detailed technical flow
 
-### 1. Recepção do áudio (`bot.py`)
+### 1. Audio reception (`bot.py`)
 
 ```
-Você: [áudio no Telegram]
+You: [audio message on Telegram]
         ↓
 bot.py polling (long-lived getUpdates)
         ↓
-Verifica: sender ID == ALLOWED_TELEGRAM_USER_ID?
-        ↓ sim
-Baixa .ogg com timestamp do áudio (não do recebimento)
+Check: sender ID == ALLOWED_TELEGRAM_USER_ID?
+        ↓ yes
+Download .ogg using the audio's own timestamp (not receipt time)
         ↓
-Salva em AUDIO_LOGS_DIR/{YYYYMMDD}_{HHMMSS}_{msg_id}.ogg
+Save to AUDIO_LOGS_DIR/{YYYYMMDD}_{HHMMSS}_{msg_id}.ogg
 ```
 
-### 2. Transcrição (`bot.py` + `faster-whisper`)
+### 2. Transcription (`bot.py` + `faster-whisper`)
 
 ```
 .ogg → faster-whisper (local, GPU-accelerated)
         ↓
-Modelo: large-v3 (português)
+Model: large-v3 (Portuguese)
         ↓
-Transcrição .txt salvo ao lado do áudio
+Transcript .txt saved alongside the audio
         ↓
-Exemplo output: "Corri 30 minutos hoje e peso 82 quilos"
+Example output: "Corri 30 minutos hoje e peso 82 quilos"
 ```
 
 **Performance**:
-- GPU (RTX 2060): 30-60s para áudio de 1-2 min
+- GPU (RTX 2060): 30-60s for a 1-2 min audio
 - CPU: 2-5 min
-- Modelo baixado em cache (~1.6GB em `~/.cache/huggingface`)
+- Model cached after download (~1.6GB in `~/.cache/huggingface`)
 
-### 3. Classificação (`classifier.py` + `patterns.py` + Ollama)
+### 3. Classification (`classifier.py` + `patterns.py` + Ollama)
 
-#### Phase 1: Pattern Matching (rápido, ~0ms)
+#### Phase 1: Pattern Matching (fast, ~0ms)
 
-Regexes estruturadas cobrem ~70-80% dos casos, sem tocar no LLM:
+Structured regexes cover ~70-80% of cases, without touching the LLM:
 
 ```python
-# exemplos de padrões em patterns.py:
+# examples of patterns in patterns.py:
 weight_pattern = r"(?:peso|weight)[:,\s]*(\d+(?:[.,]\d+)?)\s*kg"
   → "Peso: 82.5" → habit_log(weight=82.5)
 
@@ -246,190 +265,190 @@ task_pattern = r"(?:preciso|tenho que|need to)\s+(.+?)(?:\.|$)"
 cardio_pattern = r"(?:corri|correr|running)\s+(\d+)\s*min"
   → "Corri 30 min" → habit_log(cardio, activity="corri", minutes=30)
 
-# expense patterns reconhecem R$ junto com número:
+# expense patterns recognize R$ alongside a number:
 expense_pattern = r"R\$?\s*(\d+(?:[.,]\d+)?)\s*(?:em|para|de)?\s+(.+)"
   → "Comprei pão e leite R$25" → expense(amount=25, desc="pão e leite")
 ```
 
-**Resultado Phase 1**: lista de `Item` + texto não-classificado (`unmatched`)
+**Phase 1 result**: a list of `Item` + unclassified text (`unmatched`)
 
-#### Phase 2: LLM Fallback (inteligente, ~5-8s)
+#### Phase 2: LLM Fallback (smart, ~5-8s)
 
-Se `unmatched` não vazio, envia ao Ollama:
+If `unmatched` is non-empty, it's sent to Ollama:
 
 ```
 unmatched text → prompt_classify.txt → Ollama (gemma4:e2b)
                                           ↓
-                                    JSON estruturado
+                                    structured JSON
                                     [{"type":"comment", "data":{...}},...]
                                           ↓
-                                    Parser JSON (com fallback se malformado)
+                                    JSON parser (with fallback if malformed)
 ```
 
-**Prompt structure** (`prompt_classify.txt`):
-- Define schema (tipos, campos, regras)
-- Passa texto não-classificado
-- Inclui já-classificados como contexto (pra evitar duplicação)
-- Regras rígidas: nunca inventar números, usar "comment" na dúvida
+**Prompt structure** (`prompt_classify.txt`, in Portuguese — see [Language](#language)):
+- Defines the schema (types, fields, rules)
+- Passes the unclassified text
+- Includes already-classified items as context (to avoid duplication)
+- Strict rules: never invent numbers, use "comment" when unsure
 
-**Exemplo LLM**:
+**LLM example**:
 ```
 Input (unmatched): "Muito cansado hoje"
 Ollama response: [{"type":"comment", "data":{"text":"Muito cansado hoje"}}]
 ```
 
-**Performance Ollama**:
-- Primeira chamada (cold start): ~22s (carrega modelo em VRAM)
-- Chamadas subsequentes: ~5-8s (modelo já em memória)
-- Throughput: ~86 tokens/segundo (GPU RTX 2060)
+**Ollama performance**:
+- First call (cold start): ~22s (loads the model into VRAM)
+- Subsequent calls: ~5-8s (model already in memory)
+- Throughput: ~86 tokens/second (RTX 2060 GPU)
 
-### 4. Calorie estimation (opcional, para `habit_log/food`)
+### 4. Calorie estimation (optional, for `habit_log/food`)
 
-Se classificação = food SEM calorias explícitas:
+If classified as food WITHOUT explicit calories:
 
 ```
-description="pão e leite" → prompt ao Ollama
+description="pão e leite" → prompt to Ollama
                                ↓
-                         "estima ~250 kcal"
+                         "estimate ~250 kcal"
                                ↓
-Item completo: {calories: 250, estimated: true}
+Complete item: {calories: 250, estimated: true}
 ```
 
-### 5. Formatação e escrita (`formatter.py`, `daily_note.py`, `edits.py`)
+### 5. Formatting and writing (`formatter.py`, `daily_note.py`, `edits.py`)
 
-Cada `Item` → Markdown:
+Each `Item` → Markdown:
 
 ```python
-# Exemplo: task(description="arrumar portão", priority="alta")
+# Example: task(description="arrumar portão", priority="alta")
 # → "- [ ] **ALTA** Arrumar portão"
 
-# Exemplo: habit_log(cardio, minutes=30)
+# Example: habit_log(cardio, minutes=30)
 # → "**🏃 Cardio**: 30 min (correr)"
 
-# Exemplo: mark_done(task_hint="portão")
-# → busca tarefa anterior matching "portão" → marca como ✅
+# Example: mark_done(task_hint="portão")
+# → looks up a previous task matching "portão" → marks it as ✅
 
-# Exemplo: expense(amount=25, category="Mercado")
+# Example: expense(amount=25, category="Mercado")
 # → "💰 Mercado: R$25"
 ```
 
-**Determinístico**: Python puro, sem LLM — cada tipo tem template fixo.
+**Deterministic**: pure Python, no LLM — each type has a fixed template.
 
-Escreve em:
+Writes to:
 ```
 OBSIDIAN_VAULT_DIR/10 Daily/YYYY-MM-DD.md
-  (cria se não existe)
-  
-Seções:
+  (created if it doesn't exist)
+
+Sections (Portuguese headings — see Language section):
   ### 📓 Anotações         [comments]
   ### ✅ Tarefas           [tasks]
   ### 🏃 Hábitos           [habit_logs]
   ...
 ```
 
-### 6. Resposta ao Telegram
+### 6. Telegram reply
 
-Bot responde com resumo:
+The bot replies with a summary (in Portuguese, see [Language](#language)):
 
 ```
 ✅ RESUMO: 1 tarefa + 1 cardio + 1 comment
 ```
 
-Se erro em qualquer fase:
+On error in any phase:
 ```
-❌ Erro: [descrição técnica]
+❌ Erro: [technical description]
 ```
 
-Transcrição `.txt` SEMPRE fica salva mesmo se classificação falhar.
+The `.txt` transcript is ALWAYS kept even if classification fails.
 
-## Arquivos principais
+## Main files
 
-| Arquivo | Função |
+| File | Purpose |
 |---------|--------|
-| `bot.py` | Entrada principal: polling, download, coordenação |
-| `classifier.py` | Orquestração classification (patterns + LLM) |
-| `patterns.py` | ~500 linhas de regexes + heurísticas |
-| `formatter.py` | Item → Markdown determinístico |
-| `daily_note.py` | Leitura/escrita do arquivo diário Obsidian |
-| `edits.py` | Operações de edição (mark_done, correction, etc.) |
-| `calorie_estimator.py` | Prompt mínimo pra estimar kcal |
-| `prompt_classify.txt` | Prompt do LLM (schema + regras) |
+| `bot.py` | Main entry point: polling, download, coordination |
+| `classifier.py` | Classification orchestration (patterns + LLM) |
+| `patterns.py` | ~500 lines of regexes + heuristics |
+| `formatter.py` | Item → deterministic Markdown |
+| `daily_note.py` | Reading/writing the Obsidian daily note file |
+| `edits.py` | Edit operations (mark_done, correction, etc.) |
+| `calorie_estimator.py` | Minimal prompt to estimate kcal |
+| `prompt_classify.txt` | LLM prompt (schema + rules) |
 
-## Configuração de performance
+## Performance tuning
 
-### GPU Whisper
+### Whisper GPU
 
-Se você tiver GPU NVIDIA:
+If you have an NVIDIA GPU:
 ```bash
-# Checar disponibilidade
+# Check availability
 nvidia-smi
 
-# Installer CUDA via WSL2 passthrough (automático em W11+)
-# faster-whisper detecta sozinho e usa GPU
+# CUDA installed via WSL2 passthrough (automatic on W11+)
+# faster-whisper detects it on its own and uses the GPU
 ```
 
-Whisper GPU: 30-60s por áudio (2-5min em CPU).
+Whisper on GPU: 30-60s per audio (2-5min on CPU).
 
-### GPU Ollama
+### Ollama GPU
 
-WSL2 suporta GPU passthrough para NVIDIA:
+WSL2 supports NVIDIA GPU passthrough:
 ```bash
-# Verificar detecção
-ollama list  # mostra PROCESSOR: CPU/GPU
+# Check detection
+ollama list  # shows PROCESSOR: CPU/GPU
 ```
 
-Se `100% CPU` no Ollama: verifique NVIDIA driver WSL (pode estar desatualizado).
+If Ollama shows `100% CPU`: check the NVIDIA WSL driver (it may be outdated).
 
-### Modelo Ollama customizado
+### Custom Ollama model
 
-Trocar modelo em `.env`:
+Switch the model in `.env`:
 ```bash
-# Rápido (CPU + GPU):
+# Fast (CPU + GPU):
 LOCAL_LLM_MODEL=llama3.2:3b    # 2GB, ~100 tok/s (CPU)
 
-# Equilibrado:
-LOCAL_LLM_MODEL=qwen2.5:7b     # 4.4GB, recomendado português
+# Balanced:
+LOCAL_LLM_MODEL=qwen2.5:7b     # 4.4GB, recommended for Portuguese
 
-# Poderoso:
-LOCAL_LLM_MODEL=gemma4:e2b     # 7.2GB, atual (recomendado GPU)
-LOCAL_LLM_MODEL=mistral:7b     # 4GB, bom em patterns
+# Powerful:
+LOCAL_LLM_MODEL=gemma4:e2b     # 7.2GB, current (GPU recommended)
+LOCAL_LLM_MODEL=mistral:7b     # 4GB, good at following patterns
 ```
 
-Puxar novo: `ollama pull qwen2.5:7b`
+Pull a new one: `ollama pull qwen2.5:7b`
 
 ## Troubleshooting
 
-### Bot não responde
+### Bot not responding
 
-1. Confira token: `echo $TELEGRAM_BOT_TOKEN` (não deve estar vazio)
-2. Confira ID autorizado: envie `/start` no Telegram, veja qual ID aparece no log
-3. Confira Ollama: `curl http://localhost:11434/api/version` (deve retornar JSON)
+1. Check the token: `echo $TELEGRAM_BOT_TOKEN` (should not be empty)
+2. Check the authorized ID: send `/start` on Telegram, see which ID shows up in the log
+3. Check Ollama: `curl http://localhost:11434/api/version` (should return JSON)
 4. Logs: `tail -f bot.log` + `journalctl -u ollama -f`
 
-### Transcrição lenta
+### Slow transcription
 
-1. Whisper em CPU? `nvidia-smi` pra verificar GPU
-2. Modelo muito grande? Tente `WHISPER_MODEL_SIZE=medium`
+1. Is Whisper on CPU? Run `nvidia-smi` to check the GPU
+2. Model too large? Try `WHISPER_MODEL_SIZE=medium`
 
-### Classificação lenta (>15s)
+### Slow classification (>15s)
 
-1. Ollama em CPU? `ollama ps` deve mostrar `100% GPU`
-2. Modelo pequeno demais? Tente `llama3.2:3b` pra testar rápido
-3. LLM não responde? Confira `sudo journalctl -u ollama`
+1. Is Ollama on CPU? `ollama ps` should show `100% GPU`
+2. Model too small? Try `llama3.2:3b` for a quick test
+3. LLM not responding? Check `sudo journalctl -u ollama`
 
-### Nota Obsidian não atualiza
+### Obsidian note not updating
 
-1. Caminho vault correto? `ls -la "$OBSIDIAN_VAULT_DIR/10 Daily/"`
-2. Arquivo `.md` criado? `ls -la "$OBSIDIAN_VAULT_DIR/10 Daily/$(date +%Y-%m-%d).md"`
-3. Erro de formatação? Confira `bot.log` pra stderr da escrita
+1. Correct vault path? `ls -la "$OBSIDIAN_VAULT_DIR/10 Daily/"`
+2. Was the `.md` file created? `ls -la "$OBSIDIAN_VAULT_DIR/10 Daily/$(date +%Y-%m-%d).md"`
+3. Formatting error? Check `bot.log` for write-related stderr
 
-## Testes
+## Tests
 
 ```bash
-# Rodar suite de testes (35 testes, ~10s)
+# Run the test suite (35 tests, ~10s)
 uv run pytest -v
 
-# Teste específico
+# Run a specific test
 uv run pytest tests/ -k classify -v
 
 # Coverage

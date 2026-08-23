@@ -69,7 +69,7 @@ def ensure_daily_note(
     template_path = vault_dir / "_templates" / "generic_daily_note.md"
     if not template_path.exists():
         raise FileNotFoundError(
-            f"Template diário não encontrado: {template_path}"
+            f"Daily template not found: {template_path}"
         )
 
     dt = _parse_date(date_str)
@@ -92,8 +92,8 @@ def append_to_section(
     """
     if section_heading not in _VALID_SECTIONS:
         raise ValueError(
-            f"Seção desconhecida: {section_heading}. "
-            f"Válidas: {', '.join(sorted(_VALID_SECTIONS))}"
+            f"Unknown section: {section_heading}. "
+            f"Valid: {', '.join(sorted(_VALID_SECTIONS))}"
         )
 
     content = note_path.read_text(encoding="utf-8")

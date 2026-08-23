@@ -1,4 +1,8 @@
 """Classification orchestrator — pattern matching first, LLM as fallback."""
+# NOTE: prompt/system-prompt content below (_CLASSIFY_SYSTEM) and the strings
+# "(forçado pelo usuário)" / "(nenhum)" are Portuguese by design — they are
+# sent to the LLM as part of the classification prompt, which is tuned for
+# Portuguese voice transcripts. See README for the language disclaimer.
 
 from __future__ import annotations
 
@@ -54,10 +58,10 @@ def classify_transcript(transcript: str, llm_runner) -> tuple[list[Item], str]:
 
     if not unmatched:
         stats.record(items, "")
-        logger.info("LLM skipped: todos os %d segmentos resolvidos por pattern", len(items))
+        logger.info("LLM skipped: all %d segments resolved by pattern", len(items))
         return items, ""
 
-    logger.info("Classifier: %d items por pattern, %d chars unmatched → LLM fallback",
+    logger.info("Classifier: %d items by pattern, %d chars unmatched → LLM fallback",
                 len(items), len(unmatched))
 
     # Phase 2 — LLM fallback
@@ -76,7 +80,7 @@ def classify_transcript(transcript: str, llm_runner) -> tuple[list[Item], str]:
         raw.setdefault("_confidence", 0.75)
         items.append(_safe_validate(raw))
 
-    logger.info("LLM fallback: %d segmentos classificados, total=%d items", len(llm_items), len(items))
+    logger.info("LLM fallback: %d segments classified, total=%d items", len(llm_items), len(items))
     stats.record(items, unmatched if not llm_items else "")
     return items, unmatched if not llm_items else ""
 
@@ -152,14 +156,14 @@ class Stats:
         else: self.llm_skips += 1
 
     def summary(self) -> str:
-        if not self.total_audios: return "Stats: sem dados"
+        if not self.total_audios: return "Stats: no data"
         pr = 100 * self.pattern_matches / max(self.total_segments, 1)
         lr = 100 * self.llm_calls / max(self.total_audios, 1)
         lines = [
-            f"Stats: {self.total_audios} áudios, {self.total_segments} segmentos",
+            f"Stats: {self.total_audios} audios, {self.total_segments} segments",
             f"  Pattern match: {self.pattern_matches} ({pr:.0f}%)",
-            f"  LLM fallback: {self.llm_calls}/{self.total_audios} áudios ({lr:.0f}%)",
-            f"  LLM skips: {self.llm_skips} áudios (100% pattern)",
+            f"  LLM fallback: {self.llm_calls}/{self.total_audios} audios ({lr:.0f}%)",
+            f"  LLM skips: {self.llm_skips} audios (100% pattern)",
         ]
         if self.by_pattern:
             lines.append("  By pattern:")
