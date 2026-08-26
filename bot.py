@@ -146,12 +146,12 @@ def _dispatch_item(
     vault_dir: Path,
     daily_note_path: Path,
     warnings_out: list[str],
-) -> tuple[str | None, str]:
+) -> tuple[str | None, str, str | None]:
     """Format and write a single validated item to the vault.
 
-    Returns ``(relative_path, undo_id)`` where *relative_path* is the
-    path of the modified file (or ``None`` if nothing was written) and
-    *undo_id* is a short action ID for ``/undo``.
+    Returns ``(relative_path, undo_id, formatted_line)`` where *relative_path* is the
+    path of the modified file (or ``None`` if nothing was written), *undo_id* is a short
+    action ID for ``/undo``, and *formatted_line* is the exact content written.
     """
     from formatter import (
         format_task, format_comment, format_weight, format_cardio,
@@ -169,7 +169,7 @@ def _dispatch_item(
         line = format_task(data, time_str)
         _snapshot_for_undo(undo_id, daily_note_path)
         append_to_section(daily_note_path, "### ✅ Tarefas Registradas", [line])
-        return str(_rel_path(daily_note_path, vault_dir)), undo_id
+        return str(_rel_path(daily_note_path, vault_dir)), undo_id, line
 
     elif item_type == "habit_log":
         habit = item.habit
@@ -198,16 +198,16 @@ def _dispatch_item(
                     f"'{data.exercise_hint}', usei [[{exercise}]]"
                 )
         else:
-            return None, undo_id
+            return None, undo_id, None
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
         _snapshot_for_undo(undo_id, daily_note_path)
-        return str(_rel_path(daily_note_path, vault_dir)), undo_id
+        return str(_rel_path(daily_note_path, vault_dir)), undo_id, line
 
     elif item_type == "comment":
         line = format_comment(data)
         append_to_section(daily_note_path, "### 📓 Anotações", [line])
         _snapshot_for_undo(undo_id, daily_note_path)
-        return str(_rel_path(daily_note_path, vault_dir)), undo_id
+        return str(_rel_path(daily_note_path, vault_dir)), undo_id, line
 
     elif item_type == "mark_done":
         result_path, warns, old_line, new_line = find_and_mark_done(
@@ -218,7 +218,7 @@ def _dispatch_item(
         warnings_out.extend(warns)
         if result_path and old_line:
             _snapshot_for_undo(undo_id, Path(result_path))
-        return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
+        return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id, new_line if result_path else None
 
     elif item_type == "correction":
         result_path, warns, old_line, new_line = find_and_correct(
@@ -228,7 +228,7 @@ def _dispatch_item(
         warnings_out.extend(warns)
         if result_path:
             _snapshot_for_undo(undo_id, Path(result_path))
-        return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
+        return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id, new_line if result_path else None
 
     elif item_type == "complement":
         result_path, warns, line_num, inserted = find_and_complement(
@@ -237,7 +237,7 @@ def _dispatch_item(
         warnings_out.extend(warns)
         if result_path:
             _snapshot_for_undo(undo_id, Path(result_path))
-        return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id
+        return (str(_rel_path(Path(result_path), vault_dir)) if result_path else None), undo_id, inserted if result_path else None
 
     elif item_type == "recurring_task":
         line, warn = format_recurring(data, date_str, vault_dir)
@@ -249,10 +249,10 @@ def _dispatch_item(
                 f.write("\n" + line + "\n")
             if warn:
                 warnings_out.append(warn)
-            return str(_rel_path(target, vault_dir)), undo_id
+            return str(_rel_path(target, vault_dir)), undo_id, line
         if warn:
             warnings_out.append(warn)
-        return None, undo_id
+        return None, undo_id, None
 
     elif item_type == "undo":
         import re
@@ -263,7 +263,7 @@ def _dispatch_item(
             warnings_out.append(
                 f"Não encontrei a tarefa '{hint}' para desfazer."
             )
-            return None, undo_id
+            return None, undo_id, None
         lines = _read(match.path)
         old = lines[match.line_number - 1]
         if '[x]' in old:
@@ -272,19 +272,58 @@ def _dispatch_item(
             lines[match.line_number - 1] = new_line
             _write(match.path, lines)
             _snapshot_for_undo(undo_id, match.path)
-            return str(_rel_path(match.path, vault_dir)), undo_id
+            return str(_rel_path(match.path, vault_dir)), undo_id, new_line
         elif old.strip().startswith('- [ ]'):
             _snapshot_for_undo(undo_id, match.path)
             del lines[match.line_number - 1]
             _write(match.path, lines)
-            return str(_rel_path(match.path, vault_dir)), undo_id
+            return str(_rel_path(match.path, vault_dir)), undo_id, f"[linha removida: {old.strip()}]"
         else:
             warnings_out.append(
                 f"Encontrei '{hint}' mas não sei como desfazer esse tipo de linha."
             )
-            return None, undo_id
+            return None, undo_id, None
 
-    return None, undo_id
+    return None, undo_id, None
+
+
+def _generate_exact_response(
+    formatted_lines: list[tuple[str, str | None]],
+    warnings: list[str],
+    daily_created: bool,
+) -> str:
+    """Generate a response showing exactly what was persisted in Obsidian.
+
+    Returns the exact formatted content with file paths, grouped by file.
+    """
+    if not formatted_lines and not warnings and not daily_created:
+        return "✅ Nenhum item foi processado."
+
+    # Group lines by file
+    by_file: dict[str, list[str]] = {}
+    for target_file, formatted_line in formatted_lines:
+        if formatted_line:
+            if target_file not in by_file:
+                by_file[target_file] = []
+            by_file[target_file].append(formatted_line)
+
+    parts = []
+
+    if daily_created:
+        parts.append("📝 Nota diária criada")
+
+    # Show each file's content
+    for target_file in sorted(by_file.keys()):
+        lines = by_file[target_file]
+        file_section = [f"{target_file}:"]
+        for line in lines:
+            file_section.append(line)
+        parts.append("\n".join(file_section))
+
+    for warning in warnings:
+        parts.append(f"⚠️ {warning}")
+
+    return "✅\n" + "\n\n".join(parts)
 
 
 def _rel_path(abs_path: Path, vault_dir: Path) -> Path:
@@ -356,7 +395,6 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         try:
             from classifier import classify_transcript
             from daily_note import ensure_daily_note
-            from formatter import generate_resumo
 
             # Phase 1 — Classify (pattern matching + optional LLM fallback)
             items, _unmatched = await loop.run_in_executor(
@@ -401,19 +439,19 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             warnings: list[str] = []
             target_files: list[str] = []
             undo_ids: list[str] = []
+            formatted_lines: list[tuple[str, str | None]] = []
             for item in items:
-                target, uid = _dispatch_item(
+                target, uid, formatted_line = _dispatch_item(
                     item, date_str, time_str, OBSIDIAN_VAULT_DIR,
                     daily_note_path, warnings,
                 )
                 if target:
                     target_files.append(target)
+                    formatted_lines.append((target, formatted_line))
                 undo_ids.append(uid)
 
-            # Phase 5 — Generate RESUMO
-            resumo = generate_resumo(
-                items, target_files, undo_ids, warnings, daily_created,
-            )
+            # Phase 5 — Generate exact response
+            response = _generate_exact_response(formatted_lines, warnings, daily_created)
 
         except Exception:
             logger.exception("Classification pipeline failed")
@@ -423,7 +461,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
-    await message.reply_text(f"✅ {resumo}")
+    await message.reply_text(response)
 
 
 # Undo stack — stores the last 5 file snapshots for /undo
