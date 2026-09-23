@@ -116,6 +116,9 @@ def run_local_llm(prompt: str, system_prompt: str = "") -> tuple[bool, str]:
         response = client.chat(
             model=LOCAL_LLM_MODEL,
             messages=messages,
+            # Keep the model resident in VRAM: reloading after Ollama's default
+            # 5-minute idle TTL costs ~77s, dwarfing the ~8s of generation.
+            keep_alive=-1,
             options={
                 "temperature": 0.1,   # low temp for structured output
                 "num_predict": 1024,  # max tokens — classification outputs are small
@@ -128,11 +131,11 @@ def run_local_llm(prompt: str, system_prompt: str = "") -> tuple[bool, str]:
     output = response["message"]["content"].strip()
     tokens = response.get("eval_count") or response.get("done_count") or 0
     logger.info(
-        "Local LLM (%s): %d tokens generated (load=%s ms, eval=%s ms)",
+        "Local LLM (%s): %d tokens generated (load=%.1fs, eval=%.1fs)",
         LOCAL_LLM_MODEL,
         tokens,
-        response.get("load_duration", "?"),
-        response.get("eval_duration", "?"),
+        (response.get("load_duration") or 0) / 1e9,  # Ollama reports nanoseconds
+        (response.get("eval_duration") or 0) / 1e9,
     )
     return True, output
 
