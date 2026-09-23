@@ -20,7 +20,14 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    TypeHandler,
+    filters,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -340,7 +347,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if media is None:
         return
 
-    local_dt = message.date.astimezone(LOCAL_TIMEZONE)
+    # Forwarded audio belongs to the day it was originally sent, not the forward day
+    origin = message.forward_origin
+    sent_at = origin.date if origin is not None else message.date
+    local_dt = sent_at.astimezone(LOCAL_TIMEZONE)
     date_str = local_dt.strftime("%Y-%m-%d")
     time_str = local_dt.strftime("%H:%M")
     stamp = local_dt.strftime("%Y%m%d_%H%M%S")
@@ -505,8 +515,32 @@ async def handle_undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 
+async def log_incoming_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log every incoming update before filtering, so dropped messages leave a trace."""
+    message = update.effective_message
+    user = update.effective_user
+    kind = "none"
+    if message is not None:
+        for attr in ("voice", "audio", "video_note", "document", "text"):
+            if getattr(message, attr, None):
+                kind = attr
+                break
+        else:
+            kind = "other"
+    logger.info(
+        "Incoming update %s: user_id=%s chat_id=%s kind=%s allowed=%s",
+        update.update_id,
+        user.id if user else None,
+        update.effective_chat.id if update.effective_chat else None,
+        kind,
+        user is not None and user.id == ALLOWED_TELEGRAM_USER_ID,
+    )
+
+
 def build_application() -> Application:
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    # Group -1 runs before the real handlers and never blocks them
+    application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
     audio_filter = (filters.VOICE | filters.AUDIO) & filters.User(
         user_id=ALLOWED_TELEGRAM_USER_ID
     )
