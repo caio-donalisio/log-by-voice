@@ -43,6 +43,7 @@ Se não tiver calorias explícitas mas descreveu comida, estime e marque estimat
 ### habit_log/expense
 {{"type":"habit_log","habit":"expense","data":{{"description":"...","amount":null,"category":null}}}}
 category: "Mercado","Restaurantes","Moradia","Saúde","Transporte","Educação","Lazer","Pets","Negócio","Outros"
+Moradia = financiamento/prestação do imóvel, aluguel, condomínio, IPTU, luz, água, gás, internet. Negócio = só gastos da empresa/trabalho.
 NUNCA invente amount — se não foi dito número, amount=null.
 
 ### comment
