@@ -235,7 +235,9 @@ def _build_expense(m, text):
     desc = re.sub(r"\b(?:hoje|eu|um|uma|uns|umas)\b", "", desc, flags=re.I)
     desc = re.sub(r"\d+\s*reais?\s*e\s*\d+\s*centavos?", "", desc)
     desc = re.sub(r"\d+(?:[.,]\d+)?\s*(?:reais|real|conto|pila|pilas|centavos)", "", desc)
-    desc = re.sub(r"\s+(?:por|—|–|-)\s*", " ", desc); desc = re.sub(r"\s+", " ", desc).strip().rstrip(".")
+    desc = re.sub(r"R\$\s*\d+(?:[.,]\d+)?", "", desc)
+    desc = re.sub(r"\s+(?:por|—|–|-)\s*", " ", desc); desc = re.sub(r"\s+", " ", desc)
+    desc = desc.strip(" .,;:")
     if not desc: desc = text.strip().rstrip(".")
     data["description"] = desc
     for cat in ["Mercado","Restaurantes","Moradia","Saúde","Transporte","Educação","Lazer","Pets","Negócio","Outros"]:

@@ -163,8 +163,24 @@ def format_food(data: FoodData, time_str: str = "") -> str:
     if time_str: line += f" [time:: {time_str}]"
     return line + " #log/fitness #fitness/calories"
 
+# First-person money verbs the LLM may leave at the start of a description
+_EXPENSE_VERB_RE = re.compile(
+    r"^(paguei|comprei|gastei|abati|quitei|amortizei|transferi|depositei|investi)\b",
+    re.I,
+)
+
+def _expense_line_text(description: str) -> str:
+    """'Paguei ' + description, unless the description already starts with a money verb."""
+    desc = description.strip().strip(",;:-–— ").rstrip(".").strip()
+    m = _EXPENSE_VERB_RE.match(desc)
+    if m is None:
+        return f"Paguei {desc}"
+    if m.group(1).lower() == "paguei":
+        return "Paguei " + desc[m.end():].strip(",;:-–— ")
+    return desc[0].upper() + desc[1:]
+
 def format_expense(data: ExpenseData, time_str: str = "") -> str:
-    line = f"- Paguei {data.description}"
+    line = f"- {_expense_line_text(data.description)}"
     if data.amount is not None: line += f" [amount:: {_fn(data.amount)}]"
     if data.category: line += f" [category:: {data.category}]"
     if time_str: line += f" [time:: {time_str}]"

@@ -144,3 +144,10 @@ class TestPatternMatching:
             _registry(),
         )
         assert len(items) == 0
+
+    def test_expense_description_strips_currency_and_punctuation(self):
+        """Real transcript: 'Paguei, conta de luz, R$178.' left ', conta de luz, R$178'."""
+        items, _ = classify("Paguei, conta de luz, R$178.", _registry())
+        assert len(items) == 1
+        assert items[0]["data"]["amount"] == 178
+        assert items[0]["data"]["description"] == "conta de luz"
